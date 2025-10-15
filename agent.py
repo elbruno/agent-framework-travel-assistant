@@ -267,6 +267,7 @@ class TravelAgent:
         os.environ["AZURE_OPENAI_API_KEY"] = config.azure_openai_api_key
         os.environ["AZURE_OPENAI_ENDPOINT"] = config.azure_openai_endpoint
         os.environ["AZURE_OPENAI_API_VERSION"] = config.azure_openai_api_version
+        
         # Also set OpenAI v1 compatibility vars for libraries expecting base_url/version
         os.environ["OPENAI_API_VERSION"] = config.azure_openai_api_version
         os.environ["OPENAI_BASE_URL"] = f"{config.azure_openai_endpoint}openai/v1/"

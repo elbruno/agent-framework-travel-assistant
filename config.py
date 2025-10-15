@@ -16,26 +16,15 @@ class AppConfig(BaseSettings):
     """Application configuration with validation."""
     
     # API Keys
-    azure_openai_api_key: str = Field(
-        ..., 
-        validation_alias=AliasChoices("AZURE_OPENAI_API_KEY", "OPENAI_API_KEY"),
-        description="OpenAI API key"
-    )
+    azure_openai_api_key: str = Field(..., env="AZURE_OPENAI_API_KEY", description="Azure OpenAI API key")
     tavily_api_key: str = Field(..., env="TAVILY_API_KEY", description="Tavily API key")
 
     # Azure OpenAI settings
     azure_openai_endpoint: str = Field(..., env="AZURE_OPENAI_ENDPOINT", description="Azure OpenAI endpoint URL")
-    azure_openai_api_version: str = Field(
-        default="2024-02-15-preview",
-        validation_alias=AliasChoices("AZURE_OPENAI_API_VERSION", "OPENAI_API_VERSION"),
-        description="Azure OpenAI API version",
-    )
+    azure_openai_api_version: str = Field(...,env="AZURE_OPENAI_API_VERSION", description="Azure OpenAI API version")
+
     # Optional base_url for v1-style clients; computed from endpoint if not provided
-    azure_openai_base_url: Optional[str] = Field(
-        default=None,
-        validation_alias=AliasChoices("AZURE_OPENAI_BASE_URL", "OPENAI_BASE_URL"),
-        description="OpenAI v1 base URL (endpoint + 'openai/v1/')"
-    )
+    azure_openai_base_url: Optional[str] = Field(default=None, env="AZURE_OPENAI_BASE_URL", description="Azure OpenAI v1 base URL (endpoint + 'openai/v1/')")
     
     # Model Configuration
     travel_agent_model: str = Field(default="gpt-4.1", env="TRAVEL_AGENT_MODEL", description="OpenAI model name for the travel agent")
