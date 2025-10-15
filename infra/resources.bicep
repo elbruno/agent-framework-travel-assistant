@@ -30,6 +30,7 @@ param serverName string = '0.0.0.0'
 param serverPort string = '7860'
 
 param azureOpenAIApiVersion string = '2024-12-01-preview'
+
 param azureOpenAIModelVersion string = '2024-08-06'
 
 // Deployment name for the embeddings model used by Mem0
@@ -218,7 +219,7 @@ resource azureOpenAIAccount 'Microsoft.CognitiveServices/accounts@2024-10-01' = 
 
 resource gpt4o 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
   parent: azureOpenAIAccount
-  name: travelAgentModel
+  name: 'demo-gpt-4o'
   sku: {
     name: 'Standard'
     capacity: 100
@@ -318,10 +319,14 @@ resource app 'Microsoft.App/containerApps@2024-02-02-preview' = {
         {
           name: resourceNames.containerAppName
           image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest' // placeholder; azd deploy will override
-          env: [      
+          env: [
+            { name: 'OPENAI_API_KEY', secretRef: 'azure-openai-api-key' }
             { name: 'AZURE_OPENAI_API_KEY', secretRef: 'azure-openai-api-key' }
             { name: 'AZURE_OPENAI_ENDPOINT', value: azureOpenAIAccount.properties.endpoint }
+            { name: 'OPENAI_BASE_URL', value: '${azureOpenAIAccount.properties.endpoint}openai/v1/' }
+            { name: 'AZURE_OPENAI_BASE_URL', value: '${azureOpenAIAccount.properties.endpoint}openai/v1/' }
             { name: 'AZURE_OPENAI_API_VERSION', value: azureOpenAIApiVersion }
+            { name: 'OPENAI_API_VERSION', value: azureOpenAIApiVersion }
             { name: 'TAVILY_API_KEY', secretRef: 'tavily-api-key' }
             { name: 'MEM0_API_KEY', secretRef: 'mem0-api-key' }
             { name: 'SERVER_NAME', value: serverName }
@@ -335,7 +340,6 @@ resource app 'Microsoft.App/containerApps@2024-02-02-preview' = {
             { name: 'MAX_SEARCH_RESULTS', value: string(maxSearchResults) }
             { name: 'SHARE', value: share }
             { name: 'REDIS_URL', secretRef: 'redis-url' }
-            { name: 'MEM0_CLOUD', value: string(false) }
           ]
           resources: {           
             cpu: json('0.5')
