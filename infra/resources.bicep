@@ -18,7 +18,7 @@ param mem0ApiKey string
 
 // Non-secure configuration params
 param travelAgentModel string = 'demo-gpt-4o'
-param mem0Model string = 'gpt-4o-mini'
+param mem0Model string = 'demo-gpt-4o'
 param mem0EmbeddingModelDims int = 1536
 param maxToolIterations int = 8
 param maxChatHistorySize int = 10
@@ -29,12 +29,13 @@ param serverName string = '0.0.0.0'
 
 param serverPort string = '7860'
 
-param azureOpenAIApiVersion string = '2024-12-01-preview'
-
+param azureOpenAIApiVersion string = 'preview'
 param azureOpenAIModelVersion string = '2024-08-06'
+param openAIApiVersion string = '2024-12-01-preview'
 
 // Deployment name for the embeddings model used by Mem0
 param mem0EmbeddingDeploymentName string = 'demo-emb-3-small'
+
 // Optional: version for the embeddings model (many embeddings do not require a version)
 param azureOpenAIEmbeddingModelVersion string = ''
 
@@ -323,10 +324,10 @@ resource app 'Microsoft.App/containerApps@2024-02-02-preview' = {
             { name: 'OPENAI_API_KEY', secretRef: 'azure-openai-api-key' }
             { name: 'AZURE_OPENAI_API_KEY', secretRef: 'azure-openai-api-key' }
             { name: 'AZURE_OPENAI_ENDPOINT', value: azureOpenAIAccount.properties.endpoint }
-            { name: 'OPENAI_BASE_URL', value: '${azureOpenAIAccount.properties.endpoint}openai/v1/' }
-            { name: 'AZURE_OPENAI_BASE_URL', value: '${azureOpenAIAccount.properties.endpoint}openai/v1/' }
+            { name: 'OPENAI_BASE_URL', value: '${azureOpenAIAccount.properties.endpoint}openai/v1' }
+            { name: 'AZURE_OPENAI_BASE_URL', value: '${azureOpenAIAccount.properties.endpoint}openai/v1' }
             { name: 'AZURE_OPENAI_API_VERSION', value: azureOpenAIApiVersion }
-            { name: 'OPENAI_API_VERSION', value: azureOpenAIApiVersion }
+            { name: 'OPENAI_API_VERSION', value: openAIApiVersion }
             { name: 'TAVILY_API_KEY', secretRef: 'tavily-api-key' }
             { name: 'MEM0_API_KEY', secretRef: 'mem0-api-key' }
             { name: 'SERVER_NAME', value: serverName }

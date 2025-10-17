@@ -263,13 +263,15 @@ class TravelAgent:
         # Set environment variables for SDK clients
         os.environ["OPENAI_API_KEY"] = config.azure_openai_api_key
         os.environ["TAVILY_API_KEY"] = config.tavily_api_key
+        
         # Azure OpenAI specific
         os.environ["AZURE_OPENAI_API_KEY"] = config.azure_openai_api_key
         os.environ["AZURE_OPENAI_ENDPOINT"] = config.azure_openai_endpoint
         os.environ["AZURE_OPENAI_API_VERSION"] = config.azure_openai_api_version
+
         # Also set OpenAI v1 compatibility vars for libraries expecting base_url/version
-        os.environ["OPENAI_API_VERSION"] = config.azure_openai_api_version
-        os.environ["OPENAI_BASE_URL"] = f"{config.azure_openai_endpoint}openai/v1/"
+        os.environ["OPENAI_API_VERSION"] = config.openai_api_version
+        os.environ["OPENAI_BASE_URL"] = config.azure_openai_base_url or (config.azure_openai_endpoint.rstrip("/") + "/openai/v1")
 
         try:
             os.environ["MEM0_API_KEY"] = config.MEM0_API_KEY
@@ -1371,8 +1373,7 @@ class TravelAgent:
                     if file_path:
                         yield buffer, {
                             "type": "tool_result",
-                            "html": _html("📅", "generate_calendar_ics finished", "Tool execution completed"),
-                            "tool_name": "generate_calendar_ics",
+                            "tool_name": "generate_calendar_ics" if file_path else "Tool",
                             "file_path": file_path,
                         }
                 except Exception:

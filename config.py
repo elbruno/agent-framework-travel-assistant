@@ -37,6 +37,8 @@ class AppConfig(BaseSettings):
         description="OpenAI v1 base URL (endpoint + 'openai/v1/')"
     )
     
+    openai_api_version: str = Field(..., env="OPENAI_API_VERSION", description="OpenAI API version")
+    
     # Model Configuration
     travel_agent_model: str = Field(default="gpt-4.1", env="TRAVEL_AGENT_MODEL", description="OpenAI model name for the travel agent")
     mem0_model: str = Field(default="gpt-4.1-mini", env="MEM0_MODEL", description="OpenAI LLM name for the travel agent memory system")
@@ -72,34 +74,25 @@ class AppConfig(BaseSettings):
     
     def model_post_init(self, __context: Any) -> None:  # type: ignore[override]
         try:
+            # Normalize endpoint if a v1-style base URL was provided via alias
+            if self.azure_openai_endpoint:
+                ep = self.azure_openai_endpoint.strip()
+                # Remove trailing slashes
+                while ep.endswith('/'):
+                    ep = ep[:-1]
+                # If someone passed the v1 base URL here, strip the suffix
+                if ep.lower().endswith('/openai/v1'):
+                    ep = ep[:-len('/openai/v1')]
+                self.azure_openai_endpoint = ep + '/'
+
+            # Compute base_url if missing
             if not self.azure_openai_base_url and self.azure_openai_endpoint:
-                # Ensure trailing slash on endpoint, then append openai/v1/
                 base = self.azure_openai_endpoint
                 if not base.endswith("/"):
                     base = base + "/"
-                self.azure_openai_base_url = f"{base}openai/v1/"
+                self.azure_openai_base_url = f"{base}openai/v1"
         except Exception:
             pass
-
-
-_REQUIRED_ENVS = [
-    ("azure_openai_api_key", "AZURE_OPENAI_API_KEY|OPENAI_API_KEY"),
-    ("azure_openai_endpoint", "AZURE_OPENAI_ENDPOINT"),
-    ("azure_openai_api_version", "AZURE_OPENAI_API_VERSION|OPENAI_API_VERSION"),
-    ("tavily_api_key", "TAVILY_API_KEY"),
-    ("MEM0_API_KEY", "MEM0_API_KEY"),
-    ("redis_url", "REDIS_URL"),
-]
-
-# Optional but useful config
-_OPTIONAL_ENVS = [
-    ("azure_openai_base_url", "AZURE_OPENAI_BASE_URL|OPENAI_BASE_URL"),
-    ("travel_agent_model", "TRAVEL_AGENT_MODEL"),
-    ("mem0_model", "MEM0_MODEL"),
-    ("mem0_embedding_model", "MEM0_EMBEDDING_MODEL"),
-    ("mem0_embedding_model_dims", "MEM0_EMBEDDING_MODEL_DIMS"),
-]
-
 
 def get_config() -> AppConfig:
     """Get application configuration with proper error handling."""
