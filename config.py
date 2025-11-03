@@ -25,11 +25,7 @@ class AppConfig(BaseSettings):
 
     # Azure OpenAI settings
     azure_openai_endpoint: str = Field(..., env="AZURE_OPENAI_ENDPOINT", description="Azure OpenAI endpoint URL")
-    azure_openai_api_version: str = Field(
-        default="2024-02-15-preview",
-        validation_alias=AliasChoices("AZURE_OPENAI_API_VERSION", "OPENAI_API_VERSION"),
-        description="Azure OpenAI API version",
-    )
+    azure_openai_api_version: str = Field(...,env="AZURE_OPENAI_API_VERSION", description="Azure OpenAI API version")
     # Optional base_url for v1-style clients; computed from endpoint if not provided
     azure_openai_base_url: Optional[str] = Field(
         default=None,

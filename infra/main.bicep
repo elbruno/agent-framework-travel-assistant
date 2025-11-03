@@ -21,7 +21,7 @@ param tavilyApiKey string
 param mem0ApiKey string
 
 @description('Azure OpenAI data-plane API version (e.g., 2024-10-21 or a preview)')
-param azureOpenAIApiVersion string = '2024-10-21'
+param azureOpenAIApiVersion string = 'preview'
 
 // this tag tells azd which environment to use. The 'expirationfunction' name refers to the app in the azure.yaml file
 var tags = {
