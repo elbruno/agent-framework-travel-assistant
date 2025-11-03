@@ -4,9 +4,9 @@
 A travel planning assistant with dual-layer memory: Redis-backed chat history and Mem0-powered long‑term memory. It provides time‑aware research via Tavily, uses OpenAI models for planning, and can export finalized itineraries to an ICS calendar file, all wrapped in a polished Gradio UI with per‑user contexts.
 
 ## 🧠 Key features
-- **Dual-layer memory**: Short‑term chat history in Redis; long‑term preferences via Mem0 (OpenAI LLM + embeddings)
+- **Dual-layer memory**: Short‑term chat history in Redis; long‑term preferences via Mem0 (OpenAI or Azure OpenAI LLM + embeddings)
 - **Per‑user isolation**: Separate memory contexts and chat history for each user
-- **Time‑aware search**: Tavily integration for logistics (flights/hotels/transport) and destination research
+- **Time‑aware search**: Pluggable provider (Tavily or Azure Bing Web Search) for logistics and destination research
 - **Calendar export (ICS)**: Generate calendar files for itineraries and open the folder via UI
 - **Gradio UI**: Chat, user tabs, live agent event logs, clear‑chat control
 - **Configurable**: Pydantic settings via environment variables, `.env` support
@@ -16,7 +16,7 @@ A travel planning assistant with dual-layer memory: Redis-backed chat history an
 - `agent.py`: Implements `TravelAgent` using Agent Framework
   - Tools: `search_logistics`, `search_general`, `generate_calendar_ics`
   - Mem0 long‑term memory per user; Redis chat message store for short‑term context
-  - Tavily search/extract for fresh web info; ICS generation via `ics`
+  - Pluggable search provider (Tavily or Azure Bing) for fresh web info; ICS generation via `ics`
 - `config.py`: Pydantic settings and dependency checks
 - `context/seed.json`: Seeded users and initial long‑term memory entries
 - `assets/styles.css`: Custom theme and styling
@@ -28,16 +28,31 @@ A diagram of a software company:
 ## ✅ Prerequisites
 - Python >=3.11 
 - Redis instance (local Docker, Redis Cloud, or Azure Managed Redis)
-- API keys: OpenAI, Tavily, Mem0
+- API keys: OpenAI + Tavily (default) **or** Azure OpenAI + Azure Bing, plus Mem0
 
 ## 🔐 Required environment variables
-Provide via your environment or a `.env` file in the project root. Minimum required:
-- `OPENAI_API_KEY` (must start with `sk-`; validated)
-- `TAVILY_API_KEY`
-- `MEM0_CLOUD` (default `false`). If `true`, you must set `MEM0_API_KEY` and Mem0 Cloud will be used. If `false`, local Mem0 runs with Redis vector store.
-- `MEM0_API_KEY` (required only when `MEM0_CLOUD=true`)
+Provide values via your shell environment or `.env`. Begin by selecting providers, then supply the keys for that provider.
 
-Recommended/optional overrides (defaults shown):
+- `LLM_PROVIDER` – `openai` (default) or `azure_openai`
+- `SEARCH_PROVIDER` – `tavily` (default) or `azure_bing`
+
+### When `LLM_PROVIDER=openai`
+- `OPENAI_API_KEY` (must start with `sk-`; validated)
+
+### When `LLM_PROVIDER=azure_openai`
+- `AZURE_OPENAI_API_KEY`
+- `AZURE_OPENAI_ENDPOINT` (e.g., `https://my-resource.openai.azure.com`)
+- `AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME` (deployment powering the agent)
+- Optional overrides: `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME`, `AZURE_OPENAI_MEM0_LLM_DEPLOYMENT_NAME`
+
+### Search providers
+- `TAVILY_API_KEY` when `SEARCH_PROVIDER=tavily`
+- `AZURE_SEARCH_API_KEY` and `AZURE_SEARCH_ENDPOINT` when `SEARCH_PROVIDER=azure_bing`
+
+### Mem0
+- `MEM0_CLOUD` (default `false`). When `true`, set `MEM0_API_KEY` for Mem0 Cloud. Otherwise Redis-backed Mem0 is used.
+
+### Recommended overrides (defaults shown)
 - `TRAVEL_AGENT_MODEL` = `gpt-4o-mini`
 - `MEM0_MODEL` = `gpt-4o-mini`
 - `MEM0_EMBEDDING_MODEL` = `text-embedding-3-small`
@@ -49,12 +64,13 @@ Recommended/optional overrides (defaults shown):
 - `SERVER_PORT` = `7860`
 - `SHARE` = `false`
 
-Example `.env` template:
+Example `.env` (OpenAI + Tavily):
 ```env
+LLM_PROVIDER=openai
+SEARCH_PROVIDER=tavily
 OPENAI_API_KEY=sk-...
 TAVILY_API_KEY=...
 MEM0_CLOUD=false
-# If using Mem0 Cloud, set the API key and flip the flag above to true
 # MEM0_API_KEY=...
 REDIS_URL=redis://localhost:6379
 TRAVEL_AGENT_MODEL=gpt-4o-mini
@@ -68,10 +84,28 @@ SERVER_PORT=7860
 SHARE=false
 ```
 
+Example `.env` (Azure OpenAI + Azure Bing):
+```env
+LLM_PROVIDER=azure_openai
+SEARCH_PROVIDER=azure_bing
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_ENDPOINT=https://my-resource.openai.azure.com
+AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME=travel-agent
+AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME=mem0-embeddings
+AZURE_OPENAI_MEM0_LLM_DEPLOYMENT_NAME=mem0-llm
+AZURE_SEARCH_API_KEY=...
+AZURE_SEARCH_ENDPOINT=https://my-search.cognitiveservices.azure.com
+MEM0_CLOUD=false
+REDIS_URL=redis://localhost:6379
+TRAVEL_AGENT_MODEL=travel-agent
+MEM0_MODEL=mem0-llm
+MEM0_EMBEDDING_MODEL=mem0-embeddings
+```
+
 ### 🧠 Mem0 modes
 - **Local (default)**: `MEM0_CLOUD=false`
   - Uses Redis as the vector store defined by `REDIS_URL`
-  - Embeddings and LLM calls use your OpenAI key and the configured models
+  - Embeddings and LLM calls use OpenAI keys or Azure deployments based on `LLM_PROVIDER`
 - **Cloud**: `MEM0_CLOUD=true`
   - Uses Mem0 Cloud. You must set `MEM0_API_KEY`
   - No Redis vector store is used for long‑term memory (Redis is still used for chat history)

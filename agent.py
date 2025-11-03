@@ -9,20 +9,20 @@ This module defines the `TravelAgent` used by the Gradio UI:
 - Streaming chat utilities that surface structured UI events for the side panel
 """
 import warnings
+
 warnings.filterwarnings("ignore")
-import os
-import sys
 import asyncio
+import hashlib
 import json
+import os
 import re
+import sys
 import traceback
 from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, AsyncGenerator
-import re
-import hashlib
 from queue import Queue
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 
 # ------------------------------
@@ -60,25 +60,31 @@ try:
 except Exception:
     pass
 
-from tavily import TavilyClient
-from ics import Calendar, Event, DisplayAlarm
-from ics.grammar.parse import ContentLine
+from agent_framework import (
+    ChatMessage,
+    FunctionCallContent,
+    FunctionResultContent,
+    Role,
+    TextContent,
+)
+from agent_framework._middleware import AgentRunContext, agent_middleware
+from agent_framework._tools import ai_function
+from agent_framework.azure._responses_client import AzureOpenAIResponsesClient
+from agent_framework.exceptions import ServiceResponseException
 
 # Agent Framework imports
 from agent_framework.openai import OpenAIChatClient, OpenAIResponsesClient
-from agent_framework import ChatMessage, Role, TextContent
-from agent_framework import FunctionCallContent, FunctionResultContent
-from agent_framework._middleware import agent_middleware, AgentRunContext
-from agent_framework._tools import ai_function
 from agent_framework_mem0 import Mem0Provider
 from agent_framework_redis._chat_message_store import RedisChatMessageStore
-from agent_framework.exceptions import ServiceResponseException
-from mem0 import AsyncMemoryClient, AsyncMemory
+from ics import Calendar, DisplayAlarm, Event
+from ics.grammar.parse import ContentLine
+from mem0 import AsyncMemory, AsyncMemoryClient
 from mem0.configs.base import MemoryConfig
+from tavily import TavilyClient
 
 from config import AppConfig
+from utils.azure_search import AzureBingSearchClient
 from utils.ui_events import emit_ui_event
-
 
 
 class NonBlockingMem0Provider(Mem0Provider):
@@ -119,7 +125,9 @@ class NonBlockingMem0Provider(Mem0Provider):
             trimmed = "\n".join(lines[:MAX_LINES])
             if len(trimmed) > MAX_CHARS:
                 trimmed = trimmed[:MAX_CHARS] + "…"
-            from agent_framework import ChatMessage  # local import to avoid top-level cycles
+            from agent_framework import (
+                ChatMessage,  # local import to avoid top-level cycles
+            )
             new_msg = ChatMessage(role="user", text=trimmed)
             from agent_framework import Context  # type: ignore
             return Context(messages=[new_msg]) if trimmed else ctx
@@ -260,20 +268,48 @@ class TravelAgent:
             config = get_config()
         self.config = config
 
-        # Set environment variables for SDK clients
-        os.environ["OPENAI_API_KEY"] = config.openai_api_key
-        os.environ["TAVILY_API_KEY"] = config.tavily_api_key
+        # Set provider-specific environment variables for downstream SDKs
+        if config.llm_provider == "openai":
+            os.environ["OPENAI_API_KEY"] = config.openai_api_key or ""
+        else:
+            if config.azure_openai_api_key:
+                os.environ["AZURE_OPENAI_API_KEY"] = config.azure_openai_api_key
+            if config.azure_openai_endpoint:
+                os.environ["AZURE_OPENAI_ENDPOINT"] = config.azure_openai_endpoint
+            if config.azure_openai_api_version:
+                os.environ["AZURE_OPENAI_API_VERSION"] = config.azure_openai_api_version
+            if config.azure_openai_responses_deployment:
+                os.environ["AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME"] = config.azure_openai_responses_deployment
+        if config.search_provider == "tavily" and config.tavily_api_key:
+            os.environ["TAVILY_API_KEY"] = config.tavily_api_key
         try:
             os.environ["MEM0_API_KEY"] = config.MEM0_API_KEY
         except Exception:
             pass
 
         # Initialize shared clients
-        self.tavily_client = TavilyClient(api_key=config.tavily_api_key)
-        self.chat_client = OpenAIResponsesClient(
-            model_id=config.travel_agent_model,
-            api_key=config.openai_api_key,
-        )
+        if config.llm_provider == "openai":
+            self.chat_client = OpenAIResponsesClient(
+                model_id=config.travel_agent_model,
+                api_key=config.openai_api_key,
+            )
+        else:
+            self.chat_client = AzureOpenAIResponsesClient(
+                deployment_name=config.azure_openai_responses_deployment,
+                endpoint=config.azure_openai_endpoint,
+                api_key=config.azure_openai_api_key,
+                api_version=config.azure_openai_api_version,
+            )
+
+        if config.search_provider == "tavily":
+            self.search_client = TavilyClient(api_key=config.tavily_api_key)
+        else:
+            self.search_client = AzureBingSearchClient(
+                endpoint=config.azure_search_endpoint,
+                api_key=config.azure_search_api_key,
+            )
+        self.search_provider = config.search_provider
+        self.llm_provider = config.llm_provider
 
         # Initialize user context cache
         self._user_ctx_cache = {}
@@ -306,29 +342,70 @@ class TravelAgent:
             # Mem0 Cloud
             return AsyncMemoryClient(api_key=self.config.MEM0_API_KEY)
         # Local Mem0 with Redis vector store
-        cfg = {
-            "vector_store": {
-                "provider": "redis",
-                "config": {
-                    ""collection_name": "mem0",
-                    "embedding_model_dims": self.config.mem0_embedding_model_dims,
-                    "redis_url": self.config.redis_url
-                }
+        vector_store_cfg = {
+            "provider": "redis",
+            "config": {
+                "collection_name": "mem0",
+                "embedding_model_dims": self.config.mem0_embedding_model_dims,
+                "redis_url": self.config.redis_url,
             },
-            "embedder": {
+        }
+
+        if self.config.llm_provider == "openai":
+            embedder_cfg = {
                 "provider": "openai",
                 "config": {
                     "model": self.config.mem0_embedding_model,
-                    "api_key": self.config.openai_api_key
-                }
-            },
-            "llm": {
+                    "api_key": self.config.openai_api_key,
+                },
+            }
+            llm_cfg = {
                 "provider": "openai",
                 "config": {
                     "model": self.config.mem0_model,
-                    "api_key": self.config.openai_api_key
-                }
+                    "api_key": self.config.openai_api_key,
+                },
             }
+        else:
+            azure_embed_deployment = (
+                self.config.azure_openai_embeddings_deployment
+                or self.config.mem0_embedding_model
+            )
+            azure_llm_deployment = (
+                self.config.azure_openai_mem0_llm_deployment
+                or self.config.mem0_model
+            )
+            azure_kwargs_embed = {
+                "api_key": self.config.azure_openai_api_key,
+                "azure_endpoint": self.config.azure_openai_endpoint,
+                "azure_deployment": azure_embed_deployment,
+                "api_version": self.config.azure_openai_api_version,
+            }
+            azure_kwargs_llm = {
+                "api_key": self.config.azure_openai_api_key,
+                "azure_endpoint": self.config.azure_openai_endpoint,
+                "azure_deployment": azure_llm_deployment,
+                "api_version": self.config.azure_openai_api_version,
+            }
+            embedder_cfg = {
+                "provider": "azure_openai",
+                "config": {
+                    "model": self.config.mem0_embedding_model,
+                    "azure_kwargs": azure_kwargs_embed,
+                },
+            }
+            llm_cfg = {
+                "provider": "azure_openai",
+                "config": {
+                    "model": self.config.mem0_model,
+                    "azure_kwargs": azure_kwargs_llm,
+                },
+            }
+
+        cfg = {
+            "vector_store": vector_store_cfg,
+            "embedder": embedder_cfg,
+            "llm": llm_cfg,
         }
         mem_cfg = MemoryConfig(**cfg)
         return AsyncMemory(config=mem_cfg)
@@ -626,61 +703,76 @@ class TravelAgent:
                 enhanced_query += f" from {start_date}"
             if end_date and end_date != start_date:
                 enhanced_query += f" to {end_date}"
-            
-            search_kwargs = {
-                "query": enhanced_query,
-                "topic": "general",
-                "search_depth": "advanced",
-                "max_results": self.config.max_search_results,
-            }
-            
-            if include_domains:
-                search_kwargs["include_domains"] = include_domains
 
-
-            results = self.tavily_client.search(**search_kwargs)
-            
-            if not results:
-                print(f"⚠️ Empty results from Tavily", flush=True)
-                return {"results": [], "extractions": []}
-
-            # Filter results by score
-            all_results = results.get("results", [])
-            filtered_results = [r for r in all_results if r.get("score", 0) > 0.2]
-            found_msg = f"Found {len(filtered_results)}/{len(all_results)} quality results"
-            # print(f"📊 {found_msg}", flush=True)
-            try:
-                emit_ui_event("tool_log", "📊", title, found_msg, results=len(filtered_results), total=len(all_results))
-            except Exception:
-                pass
-            
-            results["results"] = filtered_results
-
-            # Extract top 2 URLs for deeper context
-            top_urls = [r.get("url") for r in filtered_results[:2] if r.get("url")]
             extractions: List[Dict[str, Any]] = []
-            
-            if top_urls:
-                try:
-                    extracted = self.tavily_client.extract(urls=top_urls)
-                    if isinstance(extracted, dict) and extracted.get("results"):
-                        extractions = extracted.get("results", [])
-                    elif isinstance(extracted, list):
-                        extractions = extracted
-                    extract_msg = f"Extracted {len(extractions)} content blocks"
-                    # print(f"📄 {extract_msg}", flush=True)
+
+            if self.search_provider == "tavily":
+                search_kwargs = {
+                    "query": enhanced_query,
+                    "topic": "general",
+                    "search_depth": "advanced",
+                    "max_results": self.config.max_search_results,
+                }
+                if include_domains:
+                    search_kwargs["include_domains"] = include_domains
+
+                results = self.search_client.search(**search_kwargs)
+                if not results:
+                    print("⚠️ Empty results from Tavily", flush=True)
+                    return {"results": [], "extractions": []}
+
+                all_results = results.get("results", [])
+                filtered_results = [r for r in all_results if r.get("score", 0) > 0.2]
+                results["results"] = filtered_results
+                top_urls = [r.get("url") for r in filtered_results[:2] if r.get("url")]
+
+                if top_urls:
                     try:
-                        emit_ui_event("tool_log", "📄", title, extract_msg, extractions=len(extractions))
-                    except Exception:
-                        pass
-                except Exception as extract_e:
-                    print(f"⚠️ URL extraction failed: {extract_e}", flush=True)
+                        extracted = self.search_client.extract(urls=top_urls)
+                        if isinstance(extracted, dict) and extracted.get("results"):
+                            extractions = extracted.get("results", [])
+                        elif isinstance(extracted, list):
+                            extractions = extracted
+                    except Exception as extract_e:
+                        print(f"⚠️ URL extraction failed: {extract_e}", flush=True)
+
+            else:
+                results = self.search_client.search(
+                    query=enhanced_query,
+                    count=self.config.max_search_results,
+                    include_domains=include_domains,
+                )
+                filtered_results = results.get("results", [])
+                top_urls = [r.get("url") for r in filtered_results[:2] if r.get("url")]
+
+                if top_urls:
+                    try:
+                        extractions = self.search_client.extract(top_urls)
+                    except Exception as extract_e:
+                        print(f"⚠️ URL extraction failed: {extract_e}", flush=True)
 
             results["extractions"] = extractions
-            complete_msg = f"{len(filtered_results)} results + {len(extractions)} extractions"
-            # print(f"✅ {title} COMPLETE: {complete_msg}", flush=True)
+            found_msg = f"Found {len(filtered_results)} results"
             try:
-                emit_ui_event("tool_result", "✅", f"{title} finished", complete_msg, results=len(filtered_results), extractions=len(extractions))
+                emit_ui_event("tool_log", "📊", title, found_msg, results=len(filtered_results))
+            except Exception:
+                pass
+            if extractions:
+                extract_msg = f"Extracted {len(extractions)} content blocks"
+                try:
+                    emit_ui_event("tool_log", "📄", title, extract_msg, extractions=len(extractions))
+                except Exception:
+                    pass
+            complete_msg = f"{len(filtered_results)} results + {len(extractions)} extractions"
+            try:
+                emit_ui_event(
+                    "tool_result",
+                    "✅",
+                    f"{title} finished",
+                    complete_msg,
+                    results=len(filtered_results),
+                    extractions=len(extractions),
+                )
             except Exception:
                 pass
             return results
@@ -1141,7 +1233,9 @@ class TravelAgent:
                             providers = list(getattr(cp_agg, "providers", []))
                             for prov in providers:
                                 try:
-                                    from agent_framework_mem0 import Mem0Provider as _AFMem0Provider  # type: ignore
+                                    from agent_framework_mem0 import (
+                                        Mem0Provider as _AFMem0Provider,  # type: ignore
+                                    )
                                 except Exception:
                                     _AFMem0Provider = Mem0Provider  # fallback to already imported
                                 if isinstance(prov, _AFMem0Provider):

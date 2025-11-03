@@ -5,25 +5,107 @@ dependency checks used by the UI entrypoint.
 """
 # import suppress_warnings  # Must be first to suppress warnings
 import warnings
+
 warnings.filterwarnings("ignore")
 import os
-from typing import Optional
+from typing import Literal, Optional
+
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
 class AppConfig(BaseSettings):
     """Application configuration with validation."""
-    
-    # API Keys
-    openai_api_key: str = Field(..., env="OPENAI_API_KEY", description="OpenAI API key")
-    tavily_api_key: str = Field(..., env="TAVILY_API_KEY", description="Tavily API key")
+
+    # Provider selection
+    llm_provider: Literal["openai", "azure_openai"] = Field(
+        default="openai",
+        env="LLM_PROVIDER",
+        description="Provider for core LLM + Mem0 (openai or azure_openai)",
+    )
+    search_provider: Literal["tavily", "azure_bing"] = Field(
+        default="tavily",
+        env="SEARCH_PROVIDER",
+        description="Web search provider used by tools",
+    )
+
+    # OpenAI configuration
+    openai_api_key: Optional[str] = Field(
+        default=None,
+        env="OPENAI_API_KEY",
+        description="OpenAI API key",
+    )
+
+    # Azure OpenAI configuration
+    azure_openai_api_key: Optional[str] = Field(
+        default=None,
+        env="AZURE_OPENAI_API_KEY",
+        description="Azure OpenAI key (KEY1/KEY2)",
+    )
+    azure_openai_endpoint: Optional[str] = Field(
+        default=None,
+        env="AZURE_OPENAI_ENDPOINT",
+        description="Azure OpenAI endpoint (https://<resource>.openai.azure.com)",
+    )
+    azure_openai_api_version: str = Field(
+        default="2024-10-21",
+        env="AZURE_OPENAI_API_VERSION",
+        description="Azure OpenAI API version",
+    )
+    azure_openai_responses_deployment: Optional[str] = Field(
+        default=None,
+        env="AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME",
+        description="Azure OpenAI deployment name for Responses API",
+    )
+    azure_openai_embeddings_deployment: Optional[str] = Field(
+        default=None,
+        env="AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME",
+        description="Azure OpenAI deployment name for embeddings (Mem0)",
+    )
+    azure_openai_mem0_llm_deployment: Optional[str] = Field(
+        default=None,
+        env="AZURE_OPENAI_MEM0_LLM_DEPLOYMENT_NAME",
+        description="Azure OpenAI deployment name used by Mem0 LLM",
+    )
+
+    # Search configuration
+    tavily_api_key: Optional[str] = Field(
+        default=None,
+        env="TAVILY_API_KEY",
+        description="Tavily API key",
+    )
+    azure_search_api_key: Optional[str] = Field(
+        default=None,
+        env="AZURE_SEARCH_API_KEY",
+        description="Azure Bing Search API key",
+    )
+    azure_search_endpoint: Optional[str] = Field(
+        default=None,
+        env="AZURE_SEARCH_ENDPOINT",
+        description="Azure Bing Search endpoint (https://<resource>.cognitiveservices.azure.com)",
+    )
 
     # Model Configuration
-    travel_agent_model: str = Field(default="gpt-4.1", env="TRAVEL_AGENT_MODEL", description="OpenAI model name for the travel agent")
-    mem0_model: str = Field(default="gpt-4.1-mini", env="MEM0_MODEL", description="OpenAI LLM name for the travel agent memory system")
-    mem0_embedding_model: str = Field(default="text-embedding-3-small", env="MEM0_EMBEDDING_MODEL", description="OpenAI embedding model for Mem0 memory system")
-    mem0_embedding_model_dims: int = Field(default=1536, env="MEM0_EMBDDING_MODEL_DIMS", description="Embedding dimensions for OpenAI embedding model")
+    travel_agent_model: str = Field(
+        default="gpt-4.1",
+        env="TRAVEL_AGENT_MODEL",
+        description="Base model ID or deployment for the travel agent",
+    )
+    mem0_model: str = Field(
+        default="gpt-4.1-mini",
+        env="MEM0_MODEL",
+        description="Model/deployment backing Mem0 LLM",
+    )
+    mem0_embedding_model: str = Field(
+        default="text-embedding-3-small",
+        env="MEM0_EMBEDDING_MODEL",
+        description="Embedding model or deployment backing Mem0",
+    )
+    mem0_embedding_model_dims: int = Field(
+        default=1536,
+        env="MEM0_EMBDDING_MODEL_DIMS",
+        description="Embedding dimensionality",
+    )
 
     # Other config
     max_tool_iterations: int = Field(default=8, env="MAX_TOOL_ITERATIONS", description="Maximum tool iterations")
@@ -55,8 +137,8 @@ class AppConfig(BaseSettings):
     @field_validator("openai_api_key")
     @classmethod
     def validate_openai_key(cls, v):
-        """Validate OpenAI API key format."""
-        if not v.startswith("sk-"):
+        """Validate OpenAI API key format when provided."""
+        if v and not v.startswith("sk-"):
             raise ValueError("OpenAI API key must start with 'sk-'")
         return v
     
@@ -65,6 +147,40 @@ class AppConfig(BaseSettings):
         """Ensure MEM0_API_KEY is present when using Mem0 Cloud."""
         if self.mem0_cloud and not (self.MEM0_API_KEY and self.MEM0_API_KEY.strip()):
             raise ValueError("MEM0_API_KEY is required when MEM0_CLOUD is true")
+        return self
+
+    @model_validator(mode="after")
+    def validate_provider_requirements(self):  # type: ignore[override]
+        """Validate provider-specific settings."""
+        if self.llm_provider == "openai":
+            if not (self.openai_api_key and self.openai_api_key.strip()):
+                raise ValueError("OPENAI_API_KEY is required when LLM_PROVIDER=openai")
+        else:
+            missing = []
+            if not (self.azure_openai_api_key and self.azure_openai_api_key.strip()):
+                missing.append("AZURE_OPENAI_API_KEY")
+            if not (self.azure_openai_endpoint and self.azure_openai_endpoint.strip()):
+                missing.append("AZURE_OPENAI_ENDPOINT")
+            if not (self.azure_openai_responses_deployment and self.azure_openai_responses_deployment.strip()):
+                missing.append("AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME")
+            if missing:
+                raise ValueError(
+                    "Missing Azure OpenAI settings: " + ", ".join(missing)
+                )
+
+        if self.search_provider == "tavily":
+            if not (self.tavily_api_key and self.tavily_api_key.strip()):
+                raise ValueError("TAVILY_API_KEY is required when SEARCH_PROVIDER=tavily")
+        else:
+            missing = []
+            if not (self.azure_search_api_key and self.azure_search_api_key.strip()):
+                missing.append("AZURE_SEARCH_API_KEY")
+            if not (self.azure_search_endpoint and self.azure_search_endpoint.strip()):
+                missing.append("AZURE_SEARCH_ENDPOINT")
+            if missing:
+                raise ValueError(
+                    "Missing Azure search settings: " + ", ".join(missing)
+                )
         return self
 
 
@@ -76,25 +192,47 @@ def get_config() -> AppConfig:
     except Exception as e:
         print(f"❌ Configuration Error: {e}")
         print("\n📝 Please check your environment variables or create a .env file with:")
+        print("LLM_PROVIDER=openai  # or azure_openai")
+        print("SEARCH_PROVIDER=tavily  # or azure_bing")
+        print("# When using OpenAI")
         print("OPENAI_API_KEY=sk-your-key-here")
-        print("TAVILY_API_KEY=your-key-here")
+        print("# When using Azure OpenAI")
+        print("# AZURE_OPENAI_API_KEY=your-key-here")
+        print("# AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com")
+        print("# AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME=your-deployment")
+        print("# Provide search keys based on SEARCH_PROVIDER (Tavily or Azure Bing)")
         raise SystemExit(1)
 
 
 def validate_dependencies() -> bool:
     """Validate that required services are available."""
-    from openai import OpenAI
-    
     config = get_config()
     
-    # Test OpenAI API
     try:
-        client = OpenAI(api_key=config.openai_api_key)
-        # Just test the client creation, not making an actual API call
-        print("✅ OpenAI API key configured")
+        if config.llm_provider == "openai":
+            from openai import OpenAI
+
+            OpenAI(api_key=config.openai_api_key)
+            print("✅ OpenAI API key configured")
+        else:
+            from openai import AzureOpenAI
+
+            AzureOpenAI(
+                api_key=config.azure_openai_api_key,
+                azure_endpoint=config.azure_openai_endpoint,
+                api_version=config.azure_openai_api_version,
+                azure_deployment=config.azure_openai_responses_deployment,
+            )
+            print("✅ Azure OpenAI credentials configured")
     except Exception as e:
-        print(f"❌ OpenAI API error: {e}")
+        provider = "OpenAI" if config.llm_provider == "openai" else "Azure OpenAI"
+        print(f"❌ {provider} configuration error: {e}")
         return False
-    
+
+    if config.search_provider == "tavily":
+        print("✅ Tavily search configured")
+    else:
+        print("✅ Azure Bing Search configured")
+
     print("✅ All dependencies validated")
     return True

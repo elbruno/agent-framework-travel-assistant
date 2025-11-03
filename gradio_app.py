@@ -8,17 +8,19 @@ It provides:
 - Calendar (.ics) open/folder helpers for macOS/Windows/Linux
 """
 import warnings
+
 warnings.filterwarnings("ignore")
 import asyncio
-import gradio as gr
-import os
-import subprocess
-import platform
 import json
-import traceback
+import os
+import platform
+import subprocess
 import sys
-from typing import List, Dict
+import traceback
 from pathlib import Path
+from typing import Dict, List
+
+import gradio as gr
 
 from agent import TravelAgent
 from config import get_config, validate_dependencies
@@ -336,7 +338,7 @@ class TravelAgentUI:
                         Your intelligent travel planning assistant powered by AI & Long Term Memory
                     </p>
                     <p style="color: #8A99A0; font-size: 14px;">
-                        Built on Redis, Mem0, Microsoft Agent Framework, Tavily, and OpenAI
+                        Built on Redis, Mem0, Microsoft Agent Framework, Tavily/Azure Bing, and OpenAI/Azure OpenAI
                     </p>
                 </div>
             """)
