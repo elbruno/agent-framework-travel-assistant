@@ -1,0 +1,72 @@
+{
+    "name": "Travel Assistant (Python + Redis)",
+    "dockerComposeFile": "docker-compose.yml",
+    "service": "app",
+    "workspaceFolder": "/workspace",
+    // Features to install in the container
+    "features": {
+        "ghcr.io/devcontainers/features/common-utils:2": {
+            "installZsh": true,
+            "configureZshAsDefaultShell": true,
+            "username": "vscode",
+            "userUid": "1000",
+            "userGid": "1000"
+        },
+        "ghcr.io/devcontainers/features/git:1": {
+            "version": "latest",
+            "ppa": true
+        }
+    },
+    // Configure tool-specific properties
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "ms-python.black-formatter",
+                "charliermarsh.ruff",
+                "rangav.vscode-thunder-client",
+                "redhat.vscode-yaml",
+                "github.copilot"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/workspace/.venv/bin/python",
+                "python.terminal.activateEnvironment": true,
+                "python.analysis.autoImportCompletions": true,
+                "python.analysis.typeCheckingMode": "basic",
+                "editor.formatOnSave": true,
+                "editor.codeActionsOnSave": {
+                    "source.organizeImports": "explicit"
+                },
+                "[python]": {
+                    "editor.formatOnSave": true
+                }
+            }
+        }
+    },
+    // Forward Redis port for local connections
+    "forwardPorts": [
+        6379,
+        7860
+    ],
+    "portsAttributes": {
+        "6379": {
+            "label": "Redis",
+            "onAutoForward": "silent"
+        },
+        "7860": {
+            "label": "Gradio App",
+            "onAutoForward": "notify"
+        }
+    },
+    // Run commands after container creation
+    "postCreateCommand": "bash .devcontainer/post-create.sh",
+    // Run commands after the container starts
+    "postStartCommand": "echo '🚀 Dev container ready! Use \"make start\" to launch the app.'",
+    // Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root
+    "remoteUser": "vscode",
+    // Environment variables
+    "remoteEnv": {
+        "REDIS_URL": "redis://redis:6379"
+    }
+}
