@@ -83,7 +83,7 @@ from mem0.configs.base import MemoryConfig
 from tavily import TavilyClient
 
 from config import AppConfig
-from utils.azure_search import AzureBingSearchClient
+from utils.azure_foundry_search import AzureFoundrySearchClient
 from utils.ui_events import emit_ui_event
 
 
@@ -303,11 +303,14 @@ class TravelAgent:
 
         if config.search_provider == "tavily":
             self.search_client = TavilyClient(api_key=config.tavily_api_key)
-        else:
-            self.search_client = AzureBingSearchClient(
-                endpoint=config.azure_search_endpoint,
-                api_key=config.azure_search_api_key,
+        elif config.search_provider == "azure_foundry_agent":
+            self.search_client = AzureFoundrySearchClient(
+                endpoint=config.azure_foundry_endpoint,
+                api_key=config.azure_foundry_api_key,
+                agent_id=config.azure_foundry_search_agent_id,
             )
+        else:
+            raise ValueError(f"Unsupported search provider: {config.search_provider}")
         self.search_provider = config.search_provider
         self.llm_provider = config.llm_provider
 
@@ -736,20 +739,19 @@ class TravelAgent:
                     except Exception as extract_e:
                         print(f"⚠️ URL extraction failed: {extract_e}", flush=True)
 
-            else:
+            elif self.search_provider == "azure_foundry_agent":
+                # Azure Foundry returns results + extractions in one call
                 results = self.search_client.search(
                     query=enhanced_query,
                     count=self.config.max_search_results,
                     include_domains=include_domains,
                 )
                 filtered_results = results.get("results", [])
-                top_urls = [r.get("url") for r in filtered_results[:2] if r.get("url")]
+                # Extractions are already included in the response
+                extractions = results.get("extractions", [])
 
-                if top_urls:
-                    try:
-                        extractions = self.search_client.extract(top_urls)
-                    except Exception as extract_e:
-                        print(f"⚠️ URL extraction failed: {extract_e}", flush=True)
+            else:
+                raise ValueError(f"Unsupported search provider: {self.search_provider}")
 
             results["extractions"] = extractions
             found_msg = f"Found {len(filtered_results)} results"

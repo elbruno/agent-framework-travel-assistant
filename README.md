@@ -1,12 +1,12 @@
 
 # 🌍 AI Travel Concierge (Agent Framework + Redis + Mem0)
 
-A travel planning assistant with dual-layer memory: Redis-backed chat history and Mem0-powered long‑term memory. It provides time‑aware research via Tavily, uses OpenAI models for planning, and can export finalized itineraries to an ICS calendar file, all wrapped in a polished Gradio UI with per‑user contexts.
+A travel planning assistant with dual-layer memory: Redis-backed chat history and Mem0-powered long‑term memory. It provides time‑aware research via Tavily or Azure AI Foundry Search Agent, uses OpenAI models for planning, and can export finalized itineraries to an ICS calendar file, all wrapped in a polished Gradio UI with per‑user contexts.
 
 ## 🧠 Key features
 - **Dual-layer memory**: Short‑term chat history in Redis; long‑term preferences via Mem0 (OpenAI or Azure OpenAI LLM + embeddings)
 - **Per‑user isolation**: Separate memory contexts and chat history for each user
-- **Time‑aware search**: Pluggable provider (Tavily or Azure Bing Web Search) for logistics and destination research
+- **Time‑aware search**: Pluggable provider (Tavily or Azure AI Foundry Search Agent) for logistics and destination research
 - **Calendar export (ICS)**: Generate calendar files for itineraries and open the folder via UI
 - **Gradio UI**: Chat, user tabs, live agent event logs, clear‑chat control
 - **Configurable**: Pydantic settings via environment variables, `.env` support
@@ -16,7 +16,7 @@ A travel planning assistant with dual-layer memory: Redis-backed chat history an
 - `agent.py`: Implements `TravelAgent` using Agent Framework
   - Tools: `search_logistics`, `search_general`, `generate_calendar_ics`
   - Mem0 long‑term memory per user; Redis chat message store for short‑term context
-  - Pluggable search provider (Tavily or Azure Bing) for fresh web info; ICS generation via `ics`
+  - Pluggable search provider (Tavily or Azure AI Foundry Search Agent) for fresh web info; ICS generation via `ics`
 - `config.py`: Pydantic settings and dependency checks
 - `context/seed.json`: Seeded users and initial long‑term memory entries
 - `assets/styles.css`: Custom theme and styling
@@ -28,13 +28,13 @@ A diagram of a software company:
 ## ✅ Prerequisites
 - Python >=3.11 
 - Redis instance (local Docker, Redis Cloud, or Azure Managed Redis)
-- API keys: OpenAI + Tavily (default) **or** Azure OpenAI + Azure Bing, plus Mem0
+- API keys: OpenAI + Tavily (default) **or** Azure OpenAI + Azure AI Foundry Search Agent, plus Mem0
 
 ## 🔐 Required environment variables
 Provide values via your shell environment or `.env`. Begin by selecting providers, then supply the keys for that provider.
 
 - `LLM_PROVIDER` – `openai` (default) or `azure_openai`
-- `SEARCH_PROVIDER` – `tavily` (default) or `azure_bing`
+- `SEARCH_PROVIDER` – `tavily` (default) or `azure_foundry_agent`
 
 ### When `LLM_PROVIDER=openai`
 - `OPENAI_API_KEY` (must start with `sk-`; validated)
@@ -47,7 +47,10 @@ Provide values via your shell environment or `.env`. Begin by selecting provider
 
 ### Search providers
 - `TAVILY_API_KEY` when `SEARCH_PROVIDER=tavily`
-- `AZURE_SEARCH_API_KEY` and `AZURE_SEARCH_ENDPOINT` when `SEARCH_PROVIDER=azure_bing`
+- When `SEARCH_PROVIDER=azure_foundry_agent`:
+  - `AZURE_FOUNDRY_API_KEY` – API key for Azure AI Foundry
+  - `AZURE_FOUNDRY_ENDPOINT` – Inference endpoint URL (e.g., `https://your-foundry-endpoint.azure.com/invoke`)
+  - `AZURE_FOUNDRY_SEARCH_AGENT_ID` – Search agent deployment ID
 
 ### Mem0
 - `MEM0_CLOUD` (default `false`). When `true`, set `MEM0_API_KEY` for Mem0 Cloud. Otherwise Redis-backed Mem0 is used.
@@ -84,17 +87,18 @@ SERVER_PORT=7860
 SHARE=false
 ```
 
-Example `.env` (Azure OpenAI + Azure Bing):
+Example `.env` (Azure OpenAI + Azure AI Foundry Search Agent):
 ```env
 LLM_PROVIDER=azure_openai
-SEARCH_PROVIDER=azure_bing
+SEARCH_PROVIDER=azure_foundry_agent
 AZURE_OPENAI_API_KEY=...
 AZURE_OPENAI_ENDPOINT=https://my-resource.openai.azure.com
 AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME=travel-agent
 AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME=mem0-embeddings
 AZURE_OPENAI_MEM0_LLM_DEPLOYMENT_NAME=mem0-llm
-AZURE_SEARCH_API_KEY=...
-AZURE_SEARCH_ENDPOINT=https://my-search.cognitiveservices.azure.com
+AZURE_FOUNDRY_API_KEY=...
+AZURE_FOUNDRY_ENDPOINT=https://your-foundry-endpoint.azure.com/invoke
+AZURE_FOUNDRY_SEARCH_AGENT_ID=your-search-agent-id
 MEM0_CLOUD=false
 REDIS_URL=redis://localhost:6379
 TRAVEL_AGENT_MODEL=travel-agent
@@ -109,6 +113,23 @@ MEM0_EMBEDDING_MODEL=mem0-embeddings
 - **Cloud**: `MEM0_CLOUD=true`
   - Uses Mem0 Cloud. You must set `MEM0_API_KEY`
   - No Redis vector store is used for long‑term memory (Redis is still used for chat history)
+
+### 🔍 Azure AI Foundry Search Agent Setup
+When using `SEARCH_PROVIDER=azure_foundry_agent`, you need to provision and deploy a search agent in Azure AI Foundry:
+
+1. **Create an Azure AI Foundry project** in the Azure portal
+2. **Deploy a search agent** with the following system prompt:
+   ```
+   You are the Travel Concierge Search Agent. Given a query, optional domain filters and a max result limit, return fresh web results and concise extractions suitable for travel planning. You MUST search the live web and include recent information (within the past 24 months when possible). Provide neutral, factual snippets.
+   ```
+3. **Configure the agent** to:
+   - Accept input format: `{ "query": "<string>", "includeDomains": ["<domain>", ...], "maxResults": <int> }`
+   - Return JSON output matching the schema in `utils/azure_foundry_search.py`
+   - Limit extractions to the top 2 URLs, keeping each snippet under 2000 characters
+   - For domain restrictions, prioritize `includeDomains` sources before falling back to broader web results
+4. **Note the inference endpoint URL and agent ID** – these will be used in your `.env` file
+
+The search agent will perform live web searches and return structured results with content extractions, enabling the travel assistant to provide up-to-date information on flights, hotels, destinations, and travel logistics.
 
 ## 🗄️ Redis setup options
 - Azure Managed Redis: This is an easy way to get a fully managed service that runs natively on Azure. You will require an Azure subscription to get started. Achieve unmatched performance with costs as low as USD 12 per month. Alternative methods for deploying Redis are outlined below. See quickstart guide through Azure portal: https://learn.microsoft.com/en-us/azure/redis/quickstart-create-managed-redis

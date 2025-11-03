@@ -23,7 +23,7 @@ class AppConfig(BaseSettings):
         env="LLM_PROVIDER",
         description="Provider for core LLM + Mem0 (openai or azure_openai)",
     )
-    search_provider: Literal["tavily", "azure_bing"] = Field(
+    search_provider: Literal["tavily", "azure_foundry_agent"] = Field(
         default="tavily",
         env="SEARCH_PROVIDER",
         description="Web search provider used by tools",
@@ -74,15 +74,20 @@ class AppConfig(BaseSettings):
         env="TAVILY_API_KEY",
         description="Tavily API key",
     )
-    azure_search_api_key: Optional[str] = Field(
+    azure_foundry_api_key: Optional[str] = Field(
         default=None,
-        env="AZURE_SEARCH_API_KEY",
-        description="Azure Bing Search API key",
+        env="AZURE_FOUNDRY_API_KEY",
+        description="Azure AI Foundry API key",
     )
-    azure_search_endpoint: Optional[str] = Field(
+    azure_foundry_endpoint: Optional[str] = Field(
         default=None,
-        env="AZURE_SEARCH_ENDPOINT",
-        description="Azure Bing Search endpoint (https://<resource>.cognitiveservices.azure.com)",
+        env="AZURE_FOUNDRY_ENDPOINT",
+        description="Azure AI Foundry inference endpoint URL",
+    )
+    azure_foundry_search_agent_id: Optional[str] = Field(
+        default=None,
+        env="AZURE_FOUNDRY_SEARCH_AGENT_ID",
+        description="Azure AI Foundry search agent deployment ID",
     )
 
     # Model Configuration
@@ -171,15 +176,17 @@ class AppConfig(BaseSettings):
         if self.search_provider == "tavily":
             if not (self.tavily_api_key and self.tavily_api_key.strip()):
                 raise ValueError("TAVILY_API_KEY is required when SEARCH_PROVIDER=tavily")
-        else:
+        elif self.search_provider == "azure_foundry_agent":
             missing = []
-            if not (self.azure_search_api_key and self.azure_search_api_key.strip()):
-                missing.append("AZURE_SEARCH_API_KEY")
-            if not (self.azure_search_endpoint and self.azure_search_endpoint.strip()):
-                missing.append("AZURE_SEARCH_ENDPOINT")
+            if not (self.azure_foundry_api_key and self.azure_foundry_api_key.strip()):
+                missing.append("AZURE_FOUNDRY_API_KEY")
+            if not (self.azure_foundry_endpoint and self.azure_foundry_endpoint.strip()):
+                missing.append("AZURE_FOUNDRY_ENDPOINT")
+            if not (self.azure_foundry_search_agent_id and self.azure_foundry_search_agent_id.strip()):
+                missing.append("AZURE_FOUNDRY_SEARCH_AGENT_ID")
             if missing:
                 raise ValueError(
-                    "Missing Azure search settings: " + ", ".join(missing)
+                    "Missing Azure AI Foundry settings: " + ", ".join(missing)
                 )
         return self
 
@@ -193,14 +200,14 @@ def get_config() -> AppConfig:
         print(f"❌ Configuration Error: {e}")
         print("\n📝 Please check your environment variables or create a .env file with:")
         print("LLM_PROVIDER=openai  # or azure_openai")
-        print("SEARCH_PROVIDER=tavily  # or azure_bing")
+        print("SEARCH_PROVIDER=tavily  # or azure_foundry_agent")
         print("# When using OpenAI")
         print("OPENAI_API_KEY=sk-your-key-here")
         print("# When using Azure OpenAI")
         print("# AZURE_OPENAI_API_KEY=your-key-here")
         print("# AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com")
         print("# AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME=your-deployment")
-        print("# Provide search keys based on SEARCH_PROVIDER (Tavily or Azure Bing)")
+        print("# Provide search keys based on SEARCH_PROVIDER (Tavily or Azure AI Foundry)")
         raise SystemExit(1)
 
 
@@ -231,8 +238,10 @@ def validate_dependencies() -> bool:
 
     if config.search_provider == "tavily":
         print("✅ Tavily search configured")
+    elif config.search_provider == "azure_foundry_agent":
+        print("✅ Azure AI Foundry Search Agent configured")
     else:
-        print("✅ Azure Bing Search configured")
+        print(f"✅ Search provider '{config.search_provider}' configured")
 
     print("✅ All dependencies validated")
     return True
