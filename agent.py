@@ -746,6 +746,7 @@ class TravelAgent:
                     count=self.config.max_search_results,
                     include_domains=include_domains,
                 )
+                # Azure Foundry agent performs its own quality filtering, so we use all results
                 filtered_results = results.get("results", [])
                 # Extractions are already included in the response
                 extractions = results.get("extractions", [])

@@ -126,10 +126,10 @@ class AzureFoundrySearchClient:
                     f"Azure AI Foundry search error: {str(e)}"
                 )
 
-            # Exponential backoff: 1s, 3s
+            # Exponential backoff: 1s for first retry, 3s for second retry
             if attempt < self.max_retries:
-                backoff_time = 1 * (3 ** attempt)  # 1s, 3s
-                time.sleep(backoff_time)
+                backoff_times = [1, 3]  # Explicit backoff times for clarity
+                time.sleep(backoff_times[attempt])
 
         # All retries exhausted
         raise last_exception
@@ -143,19 +143,24 @@ class AzureFoundrySearchClient:
         """Extract content from URLs.
         
         Note: For Azure AI Foundry, extractions are included in the search response.
-        This method is provided for API compatibility but returns empty list since
-        extractions are handled by the search agent itself.
+        This method is provided for API compatibility with other search providers,
+        but does not perform additional extraction since the Foundry search agent
+        returns extractions directly in the search response.
         
         Args:
-            urls: List of URLs to extract content from
-            max_chars: Maximum characters per extraction (not used)
+            urls: List of URLs to extract content from (ignored)
+            max_chars: Maximum characters per extraction (ignored)
         
         Returns:
-            Empty list (extractions come from search response)
+            Empty list (extractions are provided by the search agent in the search response)
+        
+        Raises:
+            NotImplementedError: Always, as this functionality is handled by the search agent
         """
-        # Extractions are already provided by the Foundry search agent
-        # in the search response, so this method returns empty list
-        return []
+        raise NotImplementedError(
+            "Azure AI Foundry search agent provides extractions directly in the search response. "
+            "This method should not be called. Use the 'extractions' field from the search() response instead."
+        )
 
     def _parse_response(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Parse and validate the Azure AI Foundry response.
