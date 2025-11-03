@@ -128,8 +128,7 @@ class AzureFoundrySearchClient:
 
             # Exponential backoff: 1s for first retry, 3s for second retry
             if attempt < self.max_retries:
-                backoff_times = [1, 3]  # Explicit backoff times for each retry attempt
-                backoff_time = backoff_times[min(attempt, len(backoff_times) - 1)]
+                backoff_time = 1 if attempt == 0 else 3
                 time.sleep(backoff_time)
 
         # All retries exhausted
@@ -157,7 +156,7 @@ class AzureFoundrySearchClient:
         """
         # Extractions are already provided by the Foundry search agent
         # in the search response, so this method returns empty list.
-        # The _perform_search method in agent.py uses extractions from the search response.
+        # The agent.py module uses extractions directly from the search response.
         return []
 
     def _parse_response(self, data: Dict[str, Any]) -> Dict[str, Any]:
