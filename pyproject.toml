@@ -16,15 +16,20 @@ dependencies = [
   "gradio>=4.44.0",
   "typing-extensions>=4.0.0",
   "redisvl==0.8.2",
-  "agent-framework-project @ file:///${PROJECT_ROOT}/agent-framework-project/python",
+  "agent-framework",
   "ics>=0.7.2",
 ]
 
-
 [tool.setuptools]
-package-dir = {"" = "."}
+py-modules = [
+  "agent",
+  "config", 
+  "gradio_app"
+]
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["amr_af_travel_agent*"]
-exclude = ["assets*", "infra*", "context*"]
+# Include non-Python files that are needed
+[tool.setuptools.package-data]
+"*" = [
+  "assets/**/*",
+  "context/**/*"
+]

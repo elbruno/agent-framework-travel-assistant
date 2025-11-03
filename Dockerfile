@@ -8,25 +8,22 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# 1) Install uv (fast resolver/installer)
-RUN pip install --no-cache-dir --upgrade pip uv
+# Install uv directly from the official image (much faster than pip install)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
-# 2) If you have a lockfile that's up-to-date, copy it now for caching
-#    (If your lock is stale, comment this out, rebuild, then re-enable after `uv lock`)
-COPY pyproject.toml ./
-# COPY uv.lock ./
+# Copy dependency files first for better Docker layer caching
+COPY pyproject.toml uv.lock ./
 
-# 3) Copy & install the local dependency FIRST (must contain its own pyproject.toml)
-COPY agent-framework-project/python /app/agent-framework-project/python
-RUN uv pip install --system --no-deps ./agent-framework-project/python
+# Install dependencies using uv sync with frozen lockfile for reproducible builds
+# --frozen ensures exact versions from lockfile, --no-dev skips dev dependencies
+RUN uv sync --frozen --no-dev --no-install-project
 
-# 4) Copy the rest of your application
+# Copy the rest of your application code
 COPY . .
 
-# 5) Install your app and remaining deps
-#    If you use a lockfile, you can "uv pip sync" instead.
-RUN uv pip install --system .
+# Install the project itself in the existing virtual environment
+RUN uv pip install --no-deps .
 
-# 6) Expose Gradio’s port and run
+# Expose Gradio's port and run using uv run for proper environment activation
 EXPOSE 7860
-CMD ["python", "gradio_app.py"]
+CMD ["uv", "run", "python", "gradio_app.py"]
