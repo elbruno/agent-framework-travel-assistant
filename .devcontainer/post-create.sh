@@ -9,6 +9,8 @@ cd /workspace
 # Install/sync dependencies with uv
 echo "📦 Installing Python dependencies with uv..."
 if [ -f "pyproject.toml" ]; then
+    # Use copy mode to avoid hardlinking issues with Docker volumes
+    export UV_LINK_MODE=copy
     uv sync --prerelease=allow
     echo "✅ Dependencies installed"
 else

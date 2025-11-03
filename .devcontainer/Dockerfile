@@ -16,14 +16,5 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
 # Set working directory
 WORKDIR /workspace
 
-# Copy dependency files first for better caching
-COPY pyproject.toml ./
-
-# Create virtual environment and install dependencies
-# This layer will be cached if pyproject.toml doesn't change
-RUN uv venv .venv \
-    && . .venv/bin/activate \
-    && uv pip install --prerelease=allow -e .
-
 # Default to bash shell
 SHELL ["/bin/bash", "-c"]
