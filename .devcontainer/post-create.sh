@@ -6,6 +6,41 @@ echo "🔧 Running post-create setup..."
 # Ensure we're in the workspace directory
 cd /workspace
 
+# Install Homebrew if needed
+BREW_PREFIX="/home/linuxbrew/.linuxbrew"
+BREW_BIN="$BREW_PREFIX/bin/brew"
+
+if ! command -v brew >/dev/null 2>&1; then
+    echo "🍺 Homebrew not found, installing..."
+    NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    # Ensure shell environments initialize brew
+    BREW_INIT='eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"'
+    for profile in /home/vscode/.bashrc /home/vscode/.zshrc /home/vscode/.profile; do
+        touch "$profile"
+        if ! grep -qs "$BREW_INIT" "$profile"; then
+            echo "$BREW_INIT" >> "$profile"
+        fi
+    done
+else
+    echo "🍺 Homebrew already installed"
+fi
+
+if [ -x "$BREW_BIN" ]; then
+    eval "$("$BREW_BIN" shellenv)"
+else
+    echo "⚠️  Homebrew binary not found at $BREW_BIN"
+fi
+
+echo "🍺 Installing Homebrew dependencies..."
+brew_deps=(uv redis)
+for pkg in "${brew_deps[@]}"; do
+    if brew list "$pkg" >/dev/null 2>&1; then
+        echo "   • $pkg already installed"
+    else
+        brew install "$pkg"
+    fi
+done
+
 # Install/sync dependencies with uv
 echo "📦 Installing Python dependencies with uv..."
 if [ -f "pyproject.toml" ]; then

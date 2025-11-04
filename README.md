@@ -151,21 +151,37 @@ make redis-clear
 
 ## ▶️ Install & run (uv)
 This project uses `uv` for environment and dependency management.
-```bash
-# Install uv (if not installed)
-curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# From the project root
-echo "Creating and syncing environment..."
-uv sync
+1. **Install prerequisites**
 
-# Create .env from example (then fill in values)
-cp -n .env.example .env 2>/dev/null || true
+  ```bash
+  brew install uv redis
+  # Optional: start a local Redis service when you're not using Docker/managed Redis
+  brew services start redis
+  ```
 
-# Start the app (loads .env and opens browser)
-uv run --env-file .env gradio_app.py
-```
-The app launches at `http://localhost:7860`.
+  > The devcontainer runs these Homebrew commands automatically the first time it starts.
+
+2. **Sync Python dependencies**
+
+  ```bash
+  uv sync
+  ```
+
+3. **Create your environment file**
+
+  ```bash
+  cp -n .env.example .env 2>/dev/null || true
+  # then edit .env and add your API keys
+  ```
+
+4. **Launch the app**
+
+  ```bash
+  uv run --env-file .env gradio_app.py
+  ```
+
+  The UI will be available at `http://localhost:7860`. You can also use `make start` if you export the same environment variables in your shell.
 
 ## 👤 Seed users and memory
 - Users are defined in `context/seed.json` under `user_memories`
