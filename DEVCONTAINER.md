@@ -221,6 +221,25 @@ Press `Ctrl+C` in the terminal where the app is running.
 
 ---
 
+## 🐋 Docker inside the DevContainer
+
+Need to run supporting services while you develop? The DevContainer now ships with Docker-in-Docker enabled. That means you can launch containers directly from the integrated terminal without leaving VS Code.
+
+Example: start a local Redis instance that mirrors production latency tests:
+
+```bash
+docker run --name redis -p 6379:6379 -d redis:8.0.3
+```
+
+🚧 **Tips**
+
+- Containers launched this way run inside the DevContainer. Use `docker ps` to list them and `docker rm -f <name>` to clean up when you are done.
+- Published ports (e.g., `-p 6379:6379`) are reachable from the DevContainer shell and forwarded back to your host automatically by VS Code.
+- If you rebuild the DevContainer, any Docker state stored in `/var/lib/docker` persists thanks to the `docker-data` volume.
+- Prefer unique container names when launching multiple instances to avoid `Conflict. The container name is already in use` errors.
+
+---
+
 ## What's Included in the DevContainer?
 
 ### Services

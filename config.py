@@ -7,11 +7,12 @@ dependency checks used by the UI entrypoint.
 import warnings
 
 warnings.filterwarnings("ignore")
-import os
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
+
+from utils.azure_foundry_search import AzureFoundrySearchClient, SearchProviderError
 
 
 class AppConfig(BaseSettings):
@@ -23,7 +24,7 @@ class AppConfig(BaseSettings):
         env="LLM_PROVIDER",
         description="Provider for core LLM + Mem0 (openai or azure_openai)",
     )
-    search_provider: Literal["tavily", "azure_bing"] = Field(
+    search_provider: Literal["tavily", "azure_foundry_agent"] = Field(
         default="tavily",
         env="SEARCH_PROVIDER",
         description="Web search provider used by tools",
@@ -55,16 +56,28 @@ class AppConfig(BaseSettings):
     azure_openai_responses_deployment: Optional[str] = Field(
         default=None,
         env="AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME",
+        validation_alias=AliasChoices(
+            "AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME",
+            "AZURE_OPENAI_RESPONSES_DEPLOYMENT",
+        ),
         description="Azure OpenAI deployment name for Responses API",
     )
     azure_openai_embeddings_deployment: Optional[str] = Field(
         default=None,
         env="AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME",
+        validation_alias=AliasChoices(
+            "AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME",
+            "AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT",
+        ),
         description="Azure OpenAI deployment name for embeddings (Mem0)",
     )
     azure_openai_mem0_llm_deployment: Optional[str] = Field(
         default=None,
         env="AZURE_OPENAI_MEM0_LLM_DEPLOYMENT_NAME",
+        validation_alias=AliasChoices(
+            "AZURE_OPENAI_MEM0_LLM_DEPLOYMENT_NAME",
+            "AZURE_OPENAI_MEM0_LLM_DEPLOYMENT",
+        ),
         description="Azure OpenAI deployment name used by Mem0 LLM",
     )
 
@@ -74,25 +87,34 @@ class AppConfig(BaseSettings):
         env="TAVILY_API_KEY",
         description="Tavily API key",
     )
-    azure_search_api_key: Optional[str] = Field(
+    azure_foundry_endpoint: Optional[str] = Field(
         default=None,
-        env="AZURE_SEARCH_API_KEY",
-        description="Azure Bing Search API key",
+        env="AZURE_FOUNDRY_ENDPOINT",
+        validation_alias=AliasChoices(
+            "AZURE_FOUNDRY_ENDPOINT",
+            "AZURE_AI_PROJECT_ENDPOINT",
+        ),
+        description="Azure AI Foundry project endpoint URL (e.g., https://<resource>.services.ai.azure.com/api/projects/<project>)",
     )
-    azure_search_endpoint: Optional[str] = Field(
+    azure_foundry_search_agent_id: Optional[str] = Field(
         default=None,
-        env="AZURE_SEARCH_ENDPOINT",
-        description="Azure Bing Search endpoint (https://<resource>.cognitiveservices.azure.com)",
+        env="AZURE_FOUNDRY_SEARCH_AGENT_ID",
+        validation_alias=AliasChoices(
+            "AZURE_FOUNDRY_SEARCH_AGENT_ID",
+            "AZURE_AI_SEARCH_AGENT_ID",
+            "AZURE_AI_AGENT_ID",
+        ),
+        description="Azure AI Foundry search agent ID (e.g., asst_xxxxx)",
     )
 
     # Model Configuration
     travel_agent_model: str = Field(
-        default="gpt-4.1",
+        default="gpt-4o-mini",
         env="TRAVEL_AGENT_MODEL",
         description="Base model ID or deployment for the travel agent",
     )
     mem0_model: str = Field(
-        default="gpt-4.1-mini",
+        default="gpt-4o-mini",
         env="MEM0_MODEL",
         description="Model/deployment backing Mem0 LLM",
     )
@@ -103,7 +125,8 @@ class AppConfig(BaseSettings):
     )
     mem0_embedding_model_dims: int = Field(
         default=1536,
-        env="MEM0_EMBDDING_MODEL_DIMS",
+        env="MEM0_EMBEDDING_MODEL_DIMS",
+        validation_alias=AliasChoices("MEM0_EMBEDDING_MODEL_DIMS", "MEM0_EMBDDING_MODEL_DIMS"),
         description="Embedding dimensionality",
     )
 
@@ -171,15 +194,16 @@ class AppConfig(BaseSettings):
         if self.search_provider == "tavily":
             if not (self.tavily_api_key and self.tavily_api_key.strip()):
                 raise ValueError("TAVILY_API_KEY is required when SEARCH_PROVIDER=tavily")
-        else:
+        elif self.search_provider == "azure_foundry_agent":
             missing = []
-            if not (self.azure_search_api_key and self.azure_search_api_key.strip()):
-                missing.append("AZURE_SEARCH_API_KEY")
-            if not (self.azure_search_endpoint and self.azure_search_endpoint.strip()):
-                missing.append("AZURE_SEARCH_ENDPOINT")
+            if not (self.azure_foundry_endpoint and self.azure_foundry_endpoint.strip()):
+                missing.append("AZURE_FOUNDRY_ENDPOINT")
+            if not (self.azure_foundry_search_agent_id and self.azure_foundry_search_agent_id.strip()):
+                missing.append("AZURE_FOUNDRY_SEARCH_AGENT_ID")
             if missing:
                 raise ValueError(
-                    "Missing Azure search settings: " + ", ".join(missing)
+                    "Missing Azure AI Foundry settings: " + ", ".join(missing) + 
+                    ". Authentication uses DefaultAzureCredential (Azure CLI, Managed Identity, etc.)"
                 )
         return self
 
@@ -193,14 +217,14 @@ def get_config() -> AppConfig:
         print(f"❌ Configuration Error: {e}")
         print("\n📝 Please check your environment variables or create a .env file with:")
         print("LLM_PROVIDER=openai  # or azure_openai")
-        print("SEARCH_PROVIDER=tavily  # or azure_bing")
+        print("SEARCH_PROVIDER=tavily  # or azure_foundry_agent")
         print("# When using OpenAI")
         print("OPENAI_API_KEY=sk-your-key-here")
         print("# When using Azure OpenAI")
         print("# AZURE_OPENAI_API_KEY=your-key-here")
         print("# AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com")
         print("# AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME=your-deployment")
-        print("# Provide search keys based on SEARCH_PROVIDER (Tavily or Azure Bing)")
+        print("# Provide search keys based on SEARCH_PROVIDER (Tavily or Azure AI Foundry)")
         raise SystemExit(1)
 
 
@@ -231,8 +255,23 @@ def validate_dependencies() -> bool:
 
     if config.search_provider == "tavily":
         print("✅ Tavily search configured")
+    elif config.search_provider == "azure_foundry_agent":
+        try:
+            client = AzureFoundrySearchClient(
+                endpoint=config.azure_foundry_endpoint or "",
+                agent_id=config.azure_foundry_search_agent_id or "",
+            )
+            response = client.search(query="travel concierge health check", count=1)
+            result_count = len(response.get("results", [])) if isinstance(response, dict) else 0
+            print(f"✅ Azure AI Foundry Search Agent reachable ({result_count} sample result{'s' if result_count != 1 else ''})")
+        except SearchProviderError as spe:
+            print(f"❌ Azure AI Foundry search validation failed: {spe}")
+            return False
+        except Exception as e:
+            print(f"❌ Azure AI Foundry search validation encountered an unexpected error: {e}")
+            return False
     else:
-        print("✅ Azure Bing Search configured")
+        print(f"✅ Search provider '{config.search_provider}' configured")
 
     print("✅ All dependencies validated")
     return True
