@@ -7,11 +7,12 @@ dependency checks used by the UI entrypoint.
 import warnings
 
 warnings.filterwarnings("ignore")
-import os
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
+
+from utils.azure_foundry_search import AzureFoundrySearchClient, SearchProviderError
 
 
 class AppConfig(BaseSettings):
@@ -92,12 +93,12 @@ class AppConfig(BaseSettings):
 
     # Model Configuration
     travel_agent_model: str = Field(
-        default="gpt-4.1",
+        default="gpt-4o-mini",
         env="TRAVEL_AGENT_MODEL",
         description="Base model ID or deployment for the travel agent",
     )
     mem0_model: str = Field(
-        default="gpt-4.1-mini",
+        default="gpt-4o-mini",
         env="MEM0_MODEL",
         description="Model/deployment backing Mem0 LLM",
     )
@@ -108,7 +109,8 @@ class AppConfig(BaseSettings):
     )
     mem0_embedding_model_dims: int = Field(
         default=1536,
-        env="MEM0_EMBDDING_MODEL_DIMS",
+        env="MEM0_EMBEDDING_MODEL_DIMS",
+        validation_alias=AliasChoices("MEM0_EMBEDDING_MODEL_DIMS", "MEM0_EMBDDING_MODEL_DIMS"),
         description="Embedding dimensionality",
     )
 
@@ -239,7 +241,21 @@ def validate_dependencies() -> bool:
     if config.search_provider == "tavily":
         print("✅ Tavily search configured")
     elif config.search_provider == "azure_foundry_agent":
-        print("✅ Azure AI Foundry Search Agent configured")
+        try:
+            client = AzureFoundrySearchClient(
+                endpoint=config.azure_foundry_endpoint or "",
+                api_key=config.azure_foundry_api_key or "",
+                agent_id=config.azure_foundry_search_agent_id or "",
+            )
+            response = client.search(query="travel concierge health check", count=1)
+            result_count = len(response.get("results", [])) if isinstance(response, dict) else 0
+            print(f"✅ Azure AI Foundry Search Agent reachable ({result_count} sample result{'s' if result_count != 1 else ''})")
+        except SearchProviderError as spe:
+            print(f"❌ Azure AI Foundry search validation failed: {spe}")
+            return False
+        except Exception as e:
+            print(f"❌ Azure AI Foundry search validation encountered an unexpected error: {e}")
+            return False
     else:
         print(f"✅ Search provider '{config.search_provider}' configured")
 

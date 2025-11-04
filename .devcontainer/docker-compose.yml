@@ -8,16 +8,21 @@ services:
 
     volumes:
       - ..:/workspace:cached
+      - docker-data:/var/lib/docker
 
     # Overrides default command so things don't shut down after the process ends.
     command: sleep infinity
 
-    # Runs app on the same network as the Redis container
-    network_mode: service:redis
+    privileged: true
+    security_opt:
+      - seccomp:unconfined
+    depends_on:
+      - redis
 
     environment:
-      - REDIS_URL=redis://localhost:6379
+      - REDIS_URL=redis://redis:6379
       - PYTHONUNBUFFERED=1
+      - DOCKER_TLS_CERTDIR=
 
     # Use "forwardPorts" in devcontainer.json to forward ports from app
     # Uncomment if you want to use a different entrypoint
@@ -35,3 +40,4 @@ services:
 
 volumes:
   redis-data:
+  docker-data:

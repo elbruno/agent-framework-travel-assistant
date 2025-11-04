@@ -15,7 +15,8 @@
         "ghcr.io/devcontainers/features/git:1": {
             "version": "latest",
             "ppa": true
-        }
+        },
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {}
     },
     // Configure tool-specific properties
     "customizations": {
@@ -27,7 +28,8 @@
                 "charliermarsh.ruff",
                 "rangav.vscode-thunder-client",
                 "redhat.vscode-yaml",
-                "github.copilot"
+                "github.copilot",
+                "ms-azuretools.vscode-containers"
             ],
             "settings": {
                 "python.defaultInterpreterPath": "/workspace/.venv/bin/python",

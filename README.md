@@ -59,9 +59,9 @@ Provide values via your shell environment or `.env`. Begin by selecting provider
 - `TRAVEL_AGENT_MODEL` = `gpt-4o-mini`
 - `MEM0_MODEL` = `gpt-4o-mini`
 - `MEM0_EMBEDDING_MODEL` = `text-embedding-3-small`
-- `MEM0_EMBDDING_MODEL_DIMS` = `1536`
+- `MEM0_EMBEDDING_MODEL_DIMS` = `1536`
 - `REDIS_URL` = `redis://localhost:6379`
-- `MAX_CHAT_HISTORY_SIZE` = `6`
+- `MAX_CHAT_HISTORY_SIZE` = `40`
 - `MAX_SEARCH_RESULTS` = `5`
 - `SERVER_NAME` = `0.0.0.0`
 - `SERVER_PORT` = `7860`
@@ -77,10 +77,10 @@ MEM0_CLOUD=false
 # MEM0_API_KEY=...
 REDIS_URL=redis://localhost:6379
 TRAVEL_AGENT_MODEL=gpt-4o-mini
-MEM0_MODEL=gpt-5-nano
+MEM0_MODEL=gpt-4o-mini
 MEM0_EMBEDDING_MODEL=text-embedding-3-small
-MEM0_EMBDDING_MODEL_DIMS=1536
-MAX_CHAT_HISTORY_SIZE=6
+MEM0_EMBEDDING_MODEL_DIMS=1536
+MAX_CHAT_HISTORY_SIZE=40
 MAX_SEARCH_RESULTS=5
 SERVER_NAME=0.0.0.0
 SERVER_PORT=7860
@@ -97,13 +97,14 @@ AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME=travel-agent
 AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME=mem0-embeddings
 AZURE_OPENAI_MEM0_LLM_DEPLOYMENT_NAME=mem0-llm
 AZURE_FOUNDRY_API_KEY=...
-AZURE_FOUNDRY_ENDPOINT=https://your-foundry-endpoint.azure.com/invoke
+AZURE_FOUNDRY_ENDPOINT=https://your-foundry-endpoint.services.ai.azure.com/api/projects/<project>/agents/<deployment>:invoke?api-version=2024-05-01-preview
 AZURE_FOUNDRY_SEARCH_AGENT_ID=your-search-agent-id
 MEM0_CLOUD=false
 REDIS_URL=redis://localhost:6379
 TRAVEL_AGENT_MODEL=travel-agent
 MEM0_MODEL=mem0-llm
 MEM0_EMBEDDING_MODEL=mem0-embeddings
+MEM0_EMBEDDING_MODEL_DIMS=1536
 ```
 
 ### 🧠 Mem0 modes
