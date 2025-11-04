@@ -87,20 +87,15 @@ class AppConfig(BaseSettings):
         env="TAVILY_API_KEY",
         description="Tavily API key",
     )
-    azure_foundry_api_key: Optional[str] = Field(
-        default=None,
-        env="AZURE_FOUNDRY_API_KEY",
-        description="Azure AI Foundry API key",
-    )
     azure_foundry_endpoint: Optional[str] = Field(
         default=None,
         env="AZURE_FOUNDRY_ENDPOINT",
-        description="Azure AI Foundry inference endpoint URL",
+        description="Azure AI Foundry project endpoint URL (e.g., https://<resource>.services.ai.azure.com/api/projects/<project>)",
     )
     azure_foundry_search_agent_id: Optional[str] = Field(
         default=None,
         env="AZURE_FOUNDRY_SEARCH_AGENT_ID",
-        description="Azure AI Foundry search agent deployment ID",
+        description="Azure AI Foundry search agent ID (e.g., asst_xxxxx)",
     )
 
     # Model Configuration
@@ -192,15 +187,14 @@ class AppConfig(BaseSettings):
                 raise ValueError("TAVILY_API_KEY is required when SEARCH_PROVIDER=tavily")
         elif self.search_provider == "azure_foundry_agent":
             missing = []
-            if not (self.azure_foundry_api_key and self.azure_foundry_api_key.strip()):
-                missing.append("AZURE_FOUNDRY_API_KEY")
             if not (self.azure_foundry_endpoint and self.azure_foundry_endpoint.strip()):
                 missing.append("AZURE_FOUNDRY_ENDPOINT")
             if not (self.azure_foundry_search_agent_id and self.azure_foundry_search_agent_id.strip()):
                 missing.append("AZURE_FOUNDRY_SEARCH_AGENT_ID")
             if missing:
                 raise ValueError(
-                    "Missing Azure AI Foundry settings: " + ", ".join(missing)
+                    "Missing Azure AI Foundry settings: " + ", ".join(missing) + 
+                    ". Authentication uses DefaultAzureCredential (Azure CLI, Managed Identity, etc.)"
                 )
         return self
 

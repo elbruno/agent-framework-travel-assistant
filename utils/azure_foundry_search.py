@@ -1,15 +1,17 @@
-"""Azure AI Foundry search agent client wrapper.
+"""Azure AI Foundry search agent client wrapper using Agent Framework SDK.
 
 This module provides a client for delegating search queries to an Azure AI Foundry
-managed agent that performs web searches and content extraction.
+managed agent that performs web searches and content extraction using the
+Microsoft Agent Framework SDK.
 """
 
 from __future__ import annotations
 
-import time
-from typing import Any, Dict, List, Optional, Union
+import json
+from typing import Any, Dict, List, Optional
 
-import httpx
+from agent_framework.azure import AzureAIFoundryAgent
+from azure.identity import DefaultAzureCredential
 
 
 class SearchProviderError(Exception):
@@ -18,45 +20,55 @@ class SearchProviderError(Exception):
 
 
 class AzureFoundrySearchClient:
-    """Client wrapper for Azure AI Foundry search agent.
+    """Client wrapper for Azure AI Foundry search agent using Agent Framework SDK.
     
     This client delegates search queries to a managed Azure AI Foundry agent
-    that performs live web searches and returns structured results with extractions.
+    using the Microsoft Agent Framework SDK for authentication and communication.
     """
 
     def __init__(
         self,
         *,
         endpoint: str,
-        api_key: str,
         agent_id: str,
-        timeout_seconds: float = 20.0,
-        max_retries: int = 2,
     ) -> None:
         """Initialize the Azure Foundry search client.
         
+        Uses DefaultAzureCredential for authentication, which supports:
+        - Azure CLI authentication
+        - Managed Identity
+        - Environment variables (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_CLIENT_SECRET)
+        - Visual Studio Code authentication
+        - And more...
+        
         Args:
-            endpoint: Azure AI Foundry inference endpoint URL
-            api_key: API key for authentication
-            agent_id: ID of the search agent deployment
-            timeout_seconds: Request timeout in seconds (default: 20.0)
-            max_retries: Maximum number of retry attempts (default: 2)
+            endpoint: Azure AI Foundry project endpoint URL 
+                     (e.g., https://<resource>.services.ai.azure.com/api/projects/<project>)
+            agent_id: ID of the search agent deployment (e.g., asst_xxxxx)
         
         Raises:
             ValueError: If required parameters are missing
         """
         if not endpoint:
             raise ValueError("Azure AI Foundry endpoint is required")
-        if not api_key:
-            raise ValueError("Azure AI Foundry API key is required")
         if not agent_id:
             raise ValueError("Azure AI Foundry agent ID is required")
         
         self.endpoint = endpoint.rstrip("/")
-        self.api_key = api_key
         self.agent_id = agent_id
-        self.timeout_seconds = timeout_seconds
-        self.max_retries = max_retries
+        
+        # Initialize Azure credential for authentication
+        self.credential = DefaultAzureCredential()
+        
+        # Initialize the Azure AI Foundry Agent client
+        try:
+            self.agent_client = AzureAIFoundryAgent(
+                endpoint=self.endpoint,
+                agent_id=self.agent_id,
+                credential=self.credential,
+            )
+        except Exception as e:
+            raise ValueError(f"Failed to initialize Azure AI Foundry agent: {e}")
 
     def search(
         self,
@@ -65,7 +77,7 @@ class AzureFoundrySearchClient:
         count: int = 10,
         include_domains: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Execute a search via the Azure AI Foundry search agent.
+        """Execute a search via the Azure AI Foundry search agent using the SDK.
         
         Args:
             query: Search query string
@@ -80,59 +92,26 @@ class AzureFoundrySearchClient:
         Raises:
             SearchProviderError: If the search fails or returns invalid data
         """
-        payload = {
-            "agent_id": self.agent_id,
-            "input": {
-                "query": query,
-                "maxResults": count,
-            }
-        }
-        
-        # Add domain filters if provided
-        if include_domains:
-            payload["input"]["includeDomains"] = include_domains
-
-        headers = {
-            "Content-Type": "application/json",
-            "api-key": self.api_key,
-        }
-
-        # Retry logic with exponential backoff
-        last_exception = None
-        for attempt in range(self.max_retries + 1):
-            try:
-                with httpx.Client(timeout=self.timeout_seconds) as client:
-                    response = client.post(
-                        self.endpoint,
-                        json=payload,
-                        headers=headers,
-                    )
-                    response.raise_for_status()
-                    data = response.json()
-
-                # Parse and validate response
-                return self._parse_response(data)
-
-            except httpx.HTTPStatusError as e:
-                last_exception = SearchProviderError(
-                    f"Azure AI Foundry search failed with status {e.response.status_code}: {e.response.text}"
-                )
-            except httpx.TimeoutException as e:
-                last_exception = SearchProviderError(
-                    f"Azure AI Foundry search timed out after {self.timeout_seconds}s"
-                )
-            except Exception as e:
-                last_exception = SearchProviderError(
-                    f"Azure AI Foundry search error: {str(e)}"
-                )
-
-            # Exponential backoff: 1s for first retry, 3s for second retry
-            if attempt < self.max_retries:
-                backoff_time = 1 if attempt == 0 else 3
-                time.sleep(backoff_time)
-
-        # All retries exhausted
-        raise last_exception
+        try:
+            # Build the search query message
+            search_query = query
+            if include_domains:
+                domain_filter = " OR ".join(f"site:{domain}" for domain in include_domains)
+                search_query = f"{query} ({domain_filter})"
+            
+            # Create the message to send to the agent
+            user_message = f"Search for: {search_query}. Return up to {count} results."
+            
+            # Run the agent with the search query
+            response = self.agent_client.run(
+                messages=[{"role": "user", "content": user_message}]
+            )
+            
+            # Parse and validate response
+            return self._parse_response(response)
+            
+        except Exception as e:
+            raise SearchProviderError(f"Azure AI Foundry search error: {str(e)}")
 
     def extract(
         self,
@@ -159,11 +138,14 @@ class AzureFoundrySearchClient:
         # The agent.py module uses extractions directly from the search response.
         return []
 
-    def _parse_response(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Parse and validate the Azure AI Foundry response.
+    def _parse_response(self, response: Any) -> Dict[str, Any]:
+        """Parse and validate the Azure AI Foundry agent response.
+        
+        The Agent Framework SDK returns structured responses from the agent.
+        We need to extract search results and content from the agent's response.
         
         Args:
-            data: Raw response data from the API
+            response: Response object from agent_client.run()
         
         Returns:
             Dictionary with normalized results and extractions
@@ -172,42 +154,61 @@ class AzureFoundrySearchClient:
             SearchProviderError: If response format is invalid
         """
         try:
-            outputs = data.get("outputs", [])
-            if not outputs:
-                raise SearchProviderError("No outputs in Azure AI Foundry response")
-
-            first_output = outputs[0]
-            content = first_output.get("content", {})
-            
-            if not isinstance(content, dict):
-                raise SearchProviderError("Invalid content format in response")
-
-            # Extract results
-            raw_results = content.get("results", [])
             results = []
-            for item in raw_results:
-                results.append({
-                    "title": item.get("title", ""),
-                    "url": item.get("url", ""),
-                    "content": item.get("snippet", ""),
-                    "score": item.get("score", 1.0),
-                })
-
-            # Extract content extractions
             extractions = []
-            raw_extractions = content.get("extractions", [])
-            for item in raw_extractions:
-                extractions.append({
-                    "url": item.get("url", ""),
-                    "content": item.get("content", ""),
-                })
-
+            
+            # The agent response may contain messages
+            if hasattr(response, 'messages'):
+                for message in response.messages:
+                    if hasattr(message, 'content') and message.content:
+                        content_str = message.content
+                        
+                        # Try to parse JSON content from the agent response
+                        try:
+                            content_data = json.loads(content_str) if isinstance(content_str, str) else content_str
+                            
+                            # Extract results if present
+                            if isinstance(content_data, dict):
+                                raw_results = content_data.get("results", [])
+                                for item in raw_results:
+                                    results.append({
+                                        "title": item.get("title", ""),
+                                        "url": item.get("url", ""),
+                                        "content": item.get("snippet", item.get("content", "")),
+                                        "score": item.get("score", 1.0),
+                                    })
+                                
+                                # Extract content extractions if present
+                                raw_extractions = content_data.get("extractions", [])
+                                for item in raw_extractions:
+                                    extractions.append({
+                                        "url": item.get("url", ""),
+                                        "content": item.get("content", ""),
+                                    })
+                        except (json.JSONDecodeError, TypeError):
+                            # If not JSON, treat as plain text result
+                            results.append({
+                                "title": "Search Result",
+                                "url": "",
+                                "content": content_str[:500] if isinstance(content_str, str) else str(content_str)[:500],
+                                "score": 1.0,
+                            })
+            
+            # If no results extracted yet, try alternative response formats
+            if not results and hasattr(response, 'content'):
+                content = response.content
+                if isinstance(content, str):
+                    results.append({
+                        "title": "Search Result",
+                        "url": "",
+                        "content": content[:500],
+                        "score": 1.0,
+                    })
+            
             return {
                 "results": results,
                 "extractions": extractions,
             }
 
-        except KeyError as e:
-            raise SearchProviderError(f"Missing required field in response: {e}")
         except Exception as e:
-            raise SearchProviderError(f"Failed to parse response: {e}")
+            raise SearchProviderError(f"Failed to parse agent response: {e}")

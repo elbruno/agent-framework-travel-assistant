@@ -48,9 +48,9 @@ Provide values via your shell environment or `.env`. Begin by selecting provider
 ### Search providers
 - `TAVILY_API_KEY` when `SEARCH_PROVIDER=tavily`
 - When `SEARCH_PROVIDER=azure_foundry_agent`:
-  - `AZURE_FOUNDRY_API_KEY` – API key for Azure AI Foundry
-  - `AZURE_FOUNDRY_ENDPOINT` – Inference endpoint URL (e.g., `https://your-foundry-endpoint.azure.com/invoke`)
-  - `AZURE_FOUNDRY_SEARCH_AGENT_ID` – Search agent deployment ID
+  - `AZURE_FOUNDRY_ENDPOINT` – Azure AI Foundry project endpoint URL (e.g., `https://<resource>.services.ai.azure.com/api/projects/<project>`)
+  - `AZURE_FOUNDRY_SEARCH_AGENT_ID` – Search agent ID (e.g., `asst_xxxxx`)
+  - Authentication uses `DefaultAzureCredential` (supports Azure CLI, Managed Identity, environment variables, and more)
 
 ### Mem0
 - `MEM0_CLOUD` (default `false`). When `true`, set `MEM0_API_KEY` for Mem0 Cloud. Otherwise Redis-backed Mem0 is used.
@@ -96,9 +96,9 @@ AZURE_OPENAI_ENDPOINT=https://my-resource.openai.azure.com
 AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME=travel-agent
 AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME=mem0-embeddings
 AZURE_OPENAI_MEM0_LLM_DEPLOYMENT_NAME=mem0-llm
-AZURE_FOUNDRY_API_KEY=...
-AZURE_FOUNDRY_ENDPOINT=https://your-foundry-endpoint.services.ai.azure.com/api/projects/<project>/agents/<deployment>:invoke?api-version=2024-05-01-preview
-AZURE_FOUNDRY_SEARCH_AGENT_ID=your-search-agent-id
+# Azure AI Foundry - uses DefaultAzureCredential for authentication
+AZURE_FOUNDRY_ENDPOINT=https://bruno-realtime-resource.services.ai.azure.com/api/projects/bruno-realtime
+AZURE_FOUNDRY_SEARCH_AGENT_ID=asst_GRyvwZvi8SrAiZKVQbhQaqNM
 MEM0_CLOUD=false
 REDIS_URL=redis://localhost:6379
 TRAVEL_AGENT_MODEL=travel-agent
@@ -116,21 +116,22 @@ MEM0_EMBEDDING_MODEL_DIMS=1536
   - No Redis vector store is used for long‑term memory (Redis is still used for chat history)
 
 ### 🔍 Azure AI Foundry Search Agent Setup
-When using `SEARCH_PROVIDER=azure_foundry_agent`, you need to provision and deploy a search agent in Azure AI Foundry:
+When using `SEARCH_PROVIDER=azure_foundry_agent`, the application connects to an existing Azure AI Foundry agent using the Microsoft Agent Framework SDK:
 
 1. **Create an Azure AI Foundry project** in the Azure portal
-2. **Deploy a search agent** with the following system prompt:
-   ```
-   You are the Travel Concierge Search Agent. Given a query, optional domain filters and a max result limit, return fresh web results and concise extractions suitable for travel planning. You MUST search the live web and include recent information (within the past 24 months when possible). Provide neutral, factual snippets.
-   ```
-3. **Configure the agent** to:
-   - Accept input format: `{ "query": "<string>", "includeDomains": ["<domain>", ...], "maxResults": <int> }`
-   - Return JSON output matching the schema in `utils/azure_foundry_search.py`
-   - Limit extractions to the top 2 URLs, keeping each snippet under 2000 characters
-   - For domain restrictions, prioritize `includeDomains` sources before falling back to broader web results
-4. **Note the inference endpoint URL and agent ID** – these will be used in your `.env` file
+2. **Deploy a search agent** with appropriate search capabilities
+3. **Note your project endpoint and agent ID**:
+   - Project endpoint format: `https://<resource>.services.ai.azure.com/api/projects/<project-name>`
+   - Agent ID format: `asst_xxxxx`
+4. **Set up authentication** using one of the supported methods:
+   - Azure CLI: Run `az login` before starting the application
+   - Managed Identity: When deployed to Azure (App Service, Container Apps, etc.)
+   - Environment variables: Set `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_SECRET`
+   - Other methods supported by `DefaultAzureCredential`
 
-The search agent will perform live web searches and return structured results with content extractions, enabling the travel assistant to provide up-to-date information on flights, hotels, destinations, and travel logistics.
+For more details, see the [Agent Framework documentation](https://learn.microsoft.com/en-us/agent-framework/user-guide/agents/agent-types/azure-ai-foundry-agent?pivots=programming-language-python).
+
+The application communicates with the agent through the Agent Framework SDK, which handles authentication, message formatting, and response parsing automatically.
 
 ## 🗄️ Redis setup options
 - Azure Managed Redis: This is an easy way to get a fully managed service that runs natively on Azure. You will require an Azure subscription to get started. Achieve unmatched performance with costs as low as USD 12 per month. Alternative methods for deploying Redis are outlined below. See quickstart guide through Azure portal: https://learn.microsoft.com/en-us/azure/redis/quickstart-create-managed-redis

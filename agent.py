@@ -306,7 +306,6 @@ class TravelAgent:
         elif config.search_provider == "azure_foundry_agent":
             self.search_client = AzureFoundrySearchClient(
                 endpoint=config.azure_foundry_endpoint,
-                api_key=config.azure_foundry_api_key,
                 agent_id=config.azure_foundry_search_agent_id,
             )
         else:
