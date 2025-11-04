@@ -56,16 +56,28 @@ class AppConfig(BaseSettings):
     azure_openai_responses_deployment: Optional[str] = Field(
         default=None,
         env="AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME",
+        validation_alias=AliasChoices(
+            "AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME",
+            "AZURE_OPENAI_RESPONSES_DEPLOYMENT",
+        ),
         description="Azure OpenAI deployment name for Responses API",
     )
     azure_openai_embeddings_deployment: Optional[str] = Field(
         default=None,
         env="AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME",
+        validation_alias=AliasChoices(
+            "AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME",
+            "AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT",
+        ),
         description="Azure OpenAI deployment name for embeddings (Mem0)",
     )
     azure_openai_mem0_llm_deployment: Optional[str] = Field(
         default=None,
         env="AZURE_OPENAI_MEM0_LLM_DEPLOYMENT_NAME",
+        validation_alias=AliasChoices(
+            "AZURE_OPENAI_MEM0_LLM_DEPLOYMENT_NAME",
+            "AZURE_OPENAI_MEM0_LLM_DEPLOYMENT",
+        ),
         description="Azure OpenAI deployment name used by Mem0 LLM",
     )
 

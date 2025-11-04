@@ -154,12 +154,6 @@ This project uses `uv` for environment and dependency management.
 # Install uv (if not installed)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install brew
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# Install dotenv
-brew install dotenv
-
 # From the project root
 echo "Creating and syncing environment..."
 uv sync
@@ -167,8 +161,8 @@ uv sync
 # Create .env from example (then fill in values)
 cp -n .env.example .env 2>/dev/null || true
 
-# Start the app (opens browser)
-dotenv run -- uv run gradio_app.py
+# Start the app (loads .env and opens browser)
+uv run --env-file .env gradio_app.py
 ```
 The app launches at `http://localhost:7860`.
 
