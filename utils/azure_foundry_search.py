@@ -1,30 +1,23 @@
-"""Azure AI Foundry search agent client wrapper using Agent Framework SDK.
-
-This module provides a client for delegating search queries to an Azure AI Foundry
-managed agent that performs web searches and content extraction using the
-Microsoft Agent Framework SDK.
-"""
+"""Azure AI Foundry search agent client wrapper using Agent Framework SDK."""
 
 from __future__ import annotations
 
+import asyncio
 import json
+import re
 from typing import Any, Dict, List, Optional
 
-from agent_framework.azure import AzureAIFoundryAgent
-from azure.identity import DefaultAzureCredential
+from agent_framework import ChatAgent
+from agent_framework.azure import AzureAIAgentClient
+from azure.identity.aio import DefaultAzureCredential
 
 
 class SearchProviderError(Exception):
     """Exception raised when the search provider encounters an error."""
-    pass
 
 
 class AzureFoundrySearchClient:
-    """Client wrapper for Azure AI Foundry search agent using Agent Framework SDK.
-    
-    This client delegates search queries to a managed Azure AI Foundry agent
-    using the Microsoft Agent Framework SDK for authentication and communication.
-    """
+    """Client wrapper for Azure AI Foundry search agent using Agent Framework SDK."""
 
     def __init__(
         self,
@@ -32,43 +25,13 @@ class AzureFoundrySearchClient:
         endpoint: str,
         agent_id: str,
     ) -> None:
-        """Initialize the Azure Foundry search client.
-        
-        Uses DefaultAzureCredential for authentication, which supports:
-        - Azure CLI authentication
-        - Managed Identity
-        - Environment variables (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_CLIENT_SECRET)
-        - Visual Studio Code authentication
-        - And more...
-        
-        Args:
-            endpoint: Azure AI Foundry project endpoint URL 
-                     (e.g., https://<resource>.services.ai.azure.com/api/projects/<project>)
-            agent_id: ID of the search agent deployment (e.g., asst_xxxxx)
-        
-        Raises:
-            ValueError: If required parameters are missing
-        """
         if not endpoint:
             raise ValueError("Azure AI Foundry endpoint is required")
         if not agent_id:
             raise ValueError("Azure AI Foundry agent ID is required")
-        
+
         self.endpoint = endpoint.rstrip("/")
         self.agent_id = agent_id
-        
-        # Initialize Azure credential for authentication
-        self.credential = DefaultAzureCredential()
-        
-        # Initialize the Azure AI Foundry Agent client
-        try:
-            self.agent_client = AzureAIFoundryAgent(
-                endpoint=self.endpoint,
-                agent_id=self.agent_id,
-                credential=self.credential,
-            )
-        except Exception as e:
-            raise ValueError(f"Failed to initialize Azure AI Foundry agent: {e}")
 
     def search(
         self,
@@ -77,41 +40,46 @@ class AzureFoundrySearchClient:
         count: int = 10,
         include_domains: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Execute a search via the Azure AI Foundry search agent using the SDK.
-        
-        Args:
-            query: Search query string
-            count: Maximum number of results to return (default: 10)
-            include_domains: Optional list of domains to prioritize
-        
-        Returns:
-            Dictionary containing:
-                - results: List of search results with title, url, content, score
-                - extractions: List of extracted content from top URLs
-        
-        Raises:
-            SearchProviderError: If the search fails or returns invalid data
-        """
+        """Execute a search via the Azure AI Foundry search agent."""
+
+        def _run(coro):
+            loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(loop)
+                result = loop.run_until_complete(coro)
+                loop.run_until_complete(loop.shutdown_asyncgens())
+                return result
+            finally:
+                asyncio.set_event_loop(None)
+                loop.close()
+
         try:
-            # Build the search query message
-            search_query = query
-            if include_domains:
-                domain_filter = " OR ".join(f"site:{domain}" for domain in include_domains)
-                search_query = f"{query} ({domain_filter})"
-            
-            # Create the message to send to the agent
-            user_message = f"Search for: {search_query}. Return up to {count} results."
-            
-            # Run the agent with the search query
-            response = self.agent_client.run(
-                messages=[{"role": "user", "content": user_message}]
+            return _run(self._search_async(query=query, count=count, include_domains=include_domains))
+        except SearchProviderError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive catch
+            raise SearchProviderError(f"Azure AI Foundry search error: {exc}") from exc
+
+    async def _search_async(
+        self,
+        *,
+        query: str,
+        count: int,
+        include_domains: Optional[List[str]],
+    ) -> Dict[str, Any]:
+        prompt = self._build_prompt(query=query, count=count, include_domains=include_domains)
+
+        async with DefaultAzureCredential() as credential:
+            chat_client = AzureAIAgentClient(
+                project_endpoint=self.endpoint,
+                agent_id=self.agent_id,
+                async_credential=credential,
             )
-            
-            # Parse and validate response
-            return self._parse_response(response)
-            
-        except Exception as e:
-            raise SearchProviderError(f"Azure AI Foundry search error: {str(e)}")
+
+            async with ChatAgent(chat_client=chat_client) as agent:
+                response = await agent.run(prompt)
+
+        return self._parse_response(response)
 
     def extract(
         self,
@@ -119,96 +87,112 @@ class AzureFoundrySearchClient:
         *,
         max_chars: int = 2000,
     ) -> List[Dict[str, str]]:
-        """Extract content from URLs.
-        
-        Note: For Azure AI Foundry, extractions are included in the search response.
-        This method is provided for API compatibility with other search providers,
-        but returns an empty list since the Foundry search agent provides extractions
-        directly in the search() response.
-        
-        Args:
-            urls: List of URLs to extract content from (ignored)
-            max_chars: Maximum characters per extraction (ignored)
-        
-        Returns:
-            Empty list (extractions are provided by the search agent in the search response)
-        """
-        # Extractions are already provided by the Foundry search agent
-        # in the search response, so this method returns empty list.
-        # The agent.py module uses extractions directly from the search response.
+        """Extraction is handled directly in the search response."""
+
         return []
 
-    def _parse_response(self, response: Any) -> Dict[str, Any]:
-        """Parse and validate the Azure AI Foundry agent response.
-        
-        The Agent Framework SDK returns structured responses from the agent.
-        We need to extract search results and content from the agent's response.
-        
-        Args:
-            response: Response object from agent_client.run()
-        
-        Returns:
-            Dictionary with normalized results and extractions
-        
-        Raises:
-            SearchProviderError: If response format is invalid
-        """
-        try:
-            results = []
-            extractions = []
-            
-            # The agent response may contain messages
-            if hasattr(response, 'messages'):
-                for message in response.messages:
-                    if hasattr(message, 'content') and message.content:
-                        content_str = message.content
-                        
-                        # Try to parse JSON content from the agent response
-                        try:
-                            content_data = json.loads(content_str) if isinstance(content_str, str) else content_str
-                            
-                            # Extract results if present
-                            if isinstance(content_data, dict):
-                                raw_results = content_data.get("results", [])
-                                for item in raw_results:
-                                    results.append({
-                                        "title": item.get("title", ""),
-                                        "url": item.get("url", ""),
-                                        "content": item.get("snippet", item.get("content", "")),
-                                        "score": item.get("score", 1.0),
-                                    })
-                                
-                                # Extract content extractions if present
-                                raw_extractions = content_data.get("extractions", [])
-                                for item in raw_extractions:
-                                    extractions.append({
-                                        "url": item.get("url", ""),
-                                        "content": item.get("content", ""),
-                                    })
-                        except (json.JSONDecodeError, TypeError):
-                            # If not JSON, treat as plain text result
-                            results.append({
-                                "title": "Search Result",
-                                "url": "",
-                                "content": content_str[:500] if isinstance(content_str, str) else str(content_str)[:500],
-                                "score": 1.0,
-                            })
-            
-            # If no results extracted yet, try alternative response formats
-            if not results and hasattr(response, 'content'):
-                content = response.content
-                if isinstance(content, str):
-                    results.append({
-                        "title": "Search Result",
-                        "url": "",
-                        "content": content[:500],
-                        "score": 1.0,
-                    })
-            
-            return {
-                "results": results,
-                "extractions": extractions,
-            }
+    def _build_prompt(
+        self,
+        *,
+        query: str,
+        count: int,
+        include_domains: Optional[List[str]],
+    ) -> str:
+        parts: List[str] = [
+            f"Please perform a fresh web search for: {query.strip()}.",
+            f"Return at most {max(1, count)} high quality results.",
+            "Respond strictly with JSON containing 'results' (list) and 'extractions' (list).",
+            "Each result must include title, url, content snippet, and score fields.",
+            "If you extract detailed content, include it under 'extractions' as objects with url and content.",
+        ]
 
-        except Exception as e:
-            raise SearchProviderError(f"Failed to parse agent response: {e}")
+        if include_domains:
+            domains = ", ".join(include_domains)
+            parts.append(f"Prioritize sources from the following domains: {domains}.")
+
+        return " ".join(parts)
+
+    def _parse_response(self, response: Any) -> Dict[str, Any]:
+        text_payload = ""
+        value_payload: Any = None
+
+        try:
+            value_payload = getattr(response, "value", None)
+        except Exception:
+            value_payload = None
+
+        if isinstance(value_payload, dict):
+            data = value_payload
+        else:
+            try:
+                text_payload = (response.text or "").strip()
+            except Exception:
+                text_payload = ""
+            data = self._extract_json(text_payload)
+
+        if not isinstance(data, dict):
+            raise SearchProviderError("Search agent response was not a JSON object")
+
+        results_raw = data.get("results", [])
+        extractions_raw = data.get("extractions", [])
+
+        results = [self._normalize_result(item) for item in results_raw if isinstance(item, dict)]
+        extractions = [self._normalize_extraction(item) for item in extractions_raw if isinstance(item, dict)]
+
+        return {
+            "results": [r for r in results if r is not None],
+            "extractions": [e for e in extractions if e is not None],
+        }
+
+    def _extract_json(self, payload: str) -> Dict[str, Any]:
+        if not payload:
+            raise SearchProviderError("Empty response from search agent")
+
+        try:
+            return json.loads(payload)
+        except json.JSONDecodeError:
+            pass
+
+        match = re.search(r"\{.*\}", payload, re.DOTALL)
+        if match:
+            candidate = match.group(0)
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError as exc:
+                raise SearchProviderError("Unable to parse JSON from search agent response") from exc
+
+        raise SearchProviderError("Search agent response was not valid JSON")
+
+    def _normalize_result(self, item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        title = str(item.get("title") or item.get("headline") or "").strip()
+        url = str(item.get("url") or item.get("link") or "").strip()
+        content = str(item.get("content") or item.get("snippet") or "").strip()
+        score = item.get("score") or item.get("confidence") or 1.0
+
+        if not (title or url or content):
+            return None
+
+        try:
+            score_val = float(score)
+        except (TypeError, ValueError):
+            score_val = 1.0
+
+        return {
+            "title": title,
+            "url": url,
+            "content": content,
+            "score": score_val,
+        }
+
+    def _normalize_extraction(self, item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        url = str(item.get("url") or item.get("source_url") or "").strip()
+        content = str(item.get("content") or item.get("text") or "").strip()
+
+        if not content:
+            return None
+
+        return {
+            "url": url,
+            "content": content,
+        }
+

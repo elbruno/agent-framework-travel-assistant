@@ -90,11 +90,20 @@ class AppConfig(BaseSettings):
     azure_foundry_endpoint: Optional[str] = Field(
         default=None,
         env="AZURE_FOUNDRY_ENDPOINT",
+        validation_alias=AliasChoices(
+            "AZURE_FOUNDRY_ENDPOINT",
+            "AZURE_AI_PROJECT_ENDPOINT",
+        ),
         description="Azure AI Foundry project endpoint URL (e.g., https://<resource>.services.ai.azure.com/api/projects/<project>)",
     )
     azure_foundry_search_agent_id: Optional[str] = Field(
         default=None,
         env="AZURE_FOUNDRY_SEARCH_AGENT_ID",
+        validation_alias=AliasChoices(
+            "AZURE_FOUNDRY_SEARCH_AGENT_ID",
+            "AZURE_AI_SEARCH_AGENT_ID",
+            "AZURE_AI_AGENT_ID",
+        ),
         description="Azure AI Foundry search agent ID (e.g., asst_xxxxx)",
     )
 
@@ -250,7 +259,6 @@ def validate_dependencies() -> bool:
         try:
             client = AzureFoundrySearchClient(
                 endpoint=config.azure_foundry_endpoint or "",
-                api_key=config.azure_foundry_api_key or "",
                 agent_id=config.azure_foundry_search_agent_id or "",
             )
             response = client.search(query="travel concierge health check", count=1)
